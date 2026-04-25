@@ -1,0 +1,133 @@
+{
+  "entities": {
+    "UserVillage": {
+      "title": "User Village",
+      "description": "The state of a user's village",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "villageName": { "type": "string" },
+        "resources": { "type": "object" },
+        "maxCapacity": { "type": "object" },
+        "buildings": { "type": "array" },
+        "npcs": { "type": "array" },
+        "mapObjects": { "type": "array" },
+        "technologies": { "type": "array" },
+        "quests": { "type": "array" },
+        "activeEvents": { "type": "array" },
+        "unlockedZones": { "type": "array" },
+        "era": { "type": "string" },
+        "weather": { "type": "string" },
+        "timeOfDay": { "type": "number" },
+        "population": { "type": "number" },
+        "gridSize": { "type": "number" },
+        "tutorialStep": { "type": "number" },
+        "lastResourceRegen": { "type": "number" },
+        "lastActive": { "type": "number" }
+      },
+      "required": ["userId", "username", "villageName", "resources", "buildings", "npcs", "lastActive"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Public profile of a player",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "villageName": { "type": "string" },
+        "level": { "type": "number" },
+        "joinedAt": { "type": "number" },
+        "clanId": { "type": "string" },
+        "clanName": { "type": "string" },
+        "fame": { "type": "number" },
+        "lastActive": { "type": "number" }
+      },
+      "required": ["username", "villageName"]
+    },
+    "UsernameClaim": {
+      "title": "Username Claim",
+      "description": "Ensures username uniqueness",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" }
+      },
+      "required": ["uid"]
+    },
+    "Clan": {
+      "title": "Clan",
+      "description": "A group of players",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "emblem": { "type": "string" },
+        "leaderId": { "type": "string" },
+        "memberCount": { "type": "number" },
+        "points": { "type": "number" },
+        "type": { "type": "string", "enum": ["open", "invite", "closed"] }
+      },
+      "required": ["name", "leaderId"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "A message sent in chat",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "type": { "type": "string", "enum": ["global", "clan", "private"] }
+      },
+      "required": ["senderId", "senderName", "text", "timestamp", "type"]
+    },
+    "FriendRequest": {
+      "title": "Friend Request",
+      "description": "A request to be friends",
+      "type": "object",
+      "properties": {
+        "fromId": { "type": "string" },
+        "fromName": { "type": "string" },
+        "toId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted"] },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["fromId", "toId", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/villages/{userId}": {
+      "schema": "UserVillage",
+      "description": "Main collection for user village data"
+    },
+    "/profiles/{userId}": {
+      "schema": "UserProfile",
+      "description": "Public profiles"
+    },
+    "/usernames/{username}": {
+      "schema": "UsernameClaim",
+      "description": "Username uniqueness registry"
+    },
+    "/clans/{clanId}": {
+      "schema": "Clan",
+      "description": "Clans registry"
+    },
+    "/clans/{clanId}/members/{userId}": {
+      "schema": "UserProfile",
+      "description": "Clan members"
+    },
+    "/chats/global/messages/{msgId}": {
+      "schema": "ChatMessage",
+      "description": "Global chat messages"
+    },
+    "/users/{userId}/friendRequests/{reqId}": {
+      "schema": "FriendRequest",
+      "description": "User inbox for friend requests"
+    },
+    "/users/{userId}/friends/{friendId}": {
+      "schema": "UserProfile",
+      "description": "User friends list"
+    }
+  }
+}
