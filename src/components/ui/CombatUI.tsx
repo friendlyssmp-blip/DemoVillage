@@ -5,14 +5,24 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useShallow } from 'zustand/react/shallow';
 import { useGameStore } from '../../store/useGameStore';
 import { Sword, ArrowLeft, RotateCw, Skull, Trophy } from 'lucide-react';
+import { audioService } from '../../services/audioService';
 
 export function CombatUI() {
   const { 
     combatStatus, setViewMode, startMatchmaking, cancelMatchmaking,
     deployUnit, selectedCombatUnit, setCombatUnit 
-  } = useGameStore();
+  } = useGameStore(useShallow(s => ({
+    combatStatus: s.combatStatus,
+    setViewMode: s.setViewMode,
+    startMatchmaking: s.startMatchmaking,
+    cancelMatchmaking: s.cancelMatchmaking,
+    deployUnit: s.deployUnit,
+    selectedCombatUnit: s.selectedCombatUnit,
+    setCombatUnit: s.setCombatUnit
+  })));
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none flex flex-col font-sans">
@@ -142,19 +152,27 @@ function CombatOverlay({ combatStatus, setViewMode }: { combatStatus: string, se
 
         {combatStatus === 'victory' && (
           <div className="flex gap-4 justify-center">
-             <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-2xl">
+             <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-2xl flex flex-col items-center">
                 <span className="text-[10px] font-black text-amber-500 uppercase">+150 Gold</span>
+                <span className="text-[8px] text-white/40 uppercase">Victory Bonus</span>
              </div>
-             <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-2xl">
-                <span className="text-[10px] font-black text-blue-400 uppercase">+25 XP</span>
+             <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-2xl flex flex-col items-center">
+                <span className="text-[10px] font-black text-blue-400 uppercase">+25 RP</span>
+                <span className="text-[8px] text-white/40 uppercase">Rank Progress</span>
              </div>
           </div>
         )}
 
         <button 
           onClick={() => {
+            const { addResource, rankedPoints } = useGameStore.getState();
             if (combatStatus === 'victory') {
-               useGameStore.getState().addResource('gold', 150);
+               audioService.play('claim');
+               addResource('gold', 150);
+               useGameStore.setState({ rankedPoints: rankedPoints + 25 });
+            } else {
+               audioService.play('close');
+               useGameStore.setState({ rankedPoints: Math.max(0, rankedPoints - 15) });
             }
             useGameStore.setState({ combatStatus: 'idle', viewMode: 'menu' });
           }}

@@ -9,12 +9,19 @@ import {
   Gift, CheckCircle2, Star, Timer, 
   Package, Coins, Pickaxe, Trees, Apple, X
 } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useGameStore } from '../../store/useGameStore';
-import { rewardService } from '../../services/rewardService';
+import { audioService } from '../../services/audioService';
 
 export function DailyRewards() {
   const [isOpen, setIsOpen] = useState(false);
-  const { lastDailyClaim, dailyRewardStreak, addResource, resources } = useGameStore();
+  const [hasAutoOpened, setHasAutoOpened] = useState(false);
+  const { lastDailyClaim, dailyRewardStreak, addResource, resources } = useGameStore(useShallow(s => ({
+    lastDailyClaim: s.lastDailyClaim,
+    dailyRewardStreak: s.dailyRewardStreak,
+    addResource: s.addResource,
+    resources: s.resources
+  })));
   const [claiming, setClaiming] = useState(false);
 
   // Check if can claim (new day based on local midnight)
@@ -30,10 +37,11 @@ export function DailyRewards() {
   }, [lastDailyClaim]);
   
   useEffect(() => {
-    if (canClaim) {
+    if (canClaim && !hasAutoOpened) {
         setIsOpen(true);
+        setHasAutoOpened(true);
     }
-  }, [canClaim]);
+  }, [canClaim, hasAutoOpened]);
 
   const handleClaim = async () => {
     if (!canClaim || claiming) return;
@@ -53,6 +61,7 @@ export function DailyRewards() {
     const currentReward = rewards[dayIndex];
     
     // Process reward
+    audioService.play('claim');
     Object.entries(currentReward).forEach(([k, v]) => {
         addResource(k as any, v as number);
     });
@@ -61,6 +70,9 @@ export function DailyRewards() {
         dailyRewardStreak: state.dailyRewardStreak + 1,
         lastDailyClaim: Date.now()
     }));
+
+    // Explicitly trigger sync after claim
+    useGameStore.getState().syncVillage();
 
     setTimeout(() => {
         setClaiming(false);
@@ -112,11 +124,14 @@ export function DailyRewards() {
                   const isUpcoming = idx > dailyRewardStreak % 7;
 
                   return (
-                    <div 
+                    <motion.button 
                       key={day}
+                      onClick={isCurrent && canClaim ? handleClaim : undefined}
+                      whileHover={isCurrent && canClaim ? { scale: 1.15 } : {}}
+                      whileTap={isCurrent && canClaim ? { scale: 0.95 } : {}}
                       className={`relative p-4 h-32 rounded-3xl border flex flex-col items-center justify-center gap-2 transition-all ${
                         isCurrent 
-                          ? 'bg-amber-500 border-amber-400 text-black scale-110 z-10 shadow-2xl shadow-amber-500/20' 
+                          ? 'bg-amber-500 border-amber-400 text-black scale-110 z-10 shadow-2xl shadow-amber-500/20 cursor-pointer' 
                           : isClaimed 
                             ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-500 opacity-60' 
                             : 'bg-white/5 border-white/5 text-white/20 shadow-inner'
@@ -131,27 +146,21 @@ export function DailyRewards() {
                           <CheckCircle2 size={16} />
                         ) : (
                           <span className="text-[10px] font-black italic">
-                            {day === 7 ? 'MEGA' : day === 4 ? 'BUNDLE' : `REWARD`}
+                            {isCurrent && canClaim ? 'TAP TO CLAIM' : (day === 7 ? 'MEGA' : day === 4 ? 'BUNDLE' : `REWARD`)}
                           </span>
                         )}
                       </div>
-                    </div>
+                    </motion.button>
                   );
                 })}
               </div>
 
               <div className="flex flex-col items-center gap-4 w-full max-w-sm">
-                <button 
-                  onClick={handleClaim}
-                  disabled={!canClaim || claiming}
-                  className={`w-full py-5 rounded-[32px] font-black uppercase italic tracking-widest text-sm shadow-2xl transition-all active:scale-95 ${
-                    canClaim 
-                      ? 'bg-white text-black hover:bg-amber-400' 
-                      : 'bg-white/10 text-white/20 cursor-not-allowed border border-white/5'
-                  }`}
-                >
-                  {claiming ? 'Processing...' : canClaim ? 'Claim Reward' : 'Come back tomorrow'}
-                </button>
+                {!canClaim && (
+                  <div className="w-full py-5 rounded-[32px] font-black uppercase italic tracking-widest text-sm bg-white/10 text-white/20 border border-white/5 text-center">
+                    Come back tomorrow
+                  </div>
+                )}
                 
                 <p className="text-[10px] font-black uppercase text-white/20 tracking-widest flex items-center gap-2">
                    < Timer size={12} />

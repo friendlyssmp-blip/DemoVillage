@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useGameStore, BUILDING_TYPES, MAP_ZONES } from '../../store/useGameStore';
 import { 
   Pickaxe, Trees, Apple, Coins, Users, Sun, CloudRain, 
@@ -17,28 +18,68 @@ import { UpgradeModal } from './UpgradeModal';
 import { Tutorial } from './Tutorial';
 import { PauseMenu } from './PauseMenu';
 import { authService } from '../../services/authService';
-import { auth } from '../../lib/firebase';
+import { audioService } from '../../services/audioService';
 
 export function HUD() {
+  const state = useGameStore(useShallow(s => ({
+    resources: s.resources,
+    maxCapacity: s.maxCapacity,
+    population: s.population,
+    weather: s.weather,
+    buildings: s.buildings,
+    isEditMode: s.isEditMode,
+    toggleEditMode: s.toggleEditMode,
+    selectedObjectId: s.selectedObjectId,
+    mapObjects: s.mapObjects,
+    removeMapObject: s.removeMapObject,
+    selectedBuildingId: s.selectedBuildingId,
+    upgradeBuilding: s.upgradeBuilding,
+    era: s.era,
+    technologies: s.technologies,
+    quests: s.quests,
+    activeEvents: s.activeEvents,
+    unlockedZones: s.unlockedZones,
+    unlockZone: s.unlockZone,
+    startResearch: s.startResearch,
+    villageName: s.villageName,
+    user: s.user,
+    playerName: s.playerName,
+    setPaused: s.setPaused,
+    isPaused: s.isPaused,
+    isResearchOpen: s.isResearchOpen,
+    setResearchOpen: s.setResearchOpen,
+    isQuestsOpen: s.isQuestsOpen,
+    setQuestsOpen: s.setQuestsOpen,
+    isZonesOpen: s.isZonesOpen,
+    setZonesOpen: s.setZonesOpen,
+    viewMode: s.viewMode,
+    setViewMode: s.setViewMode,
+    combatStatus: s.combatStatus,
+    rankedPoints: s.rankedPoints,
+    rankTier: s.rankTier,
+    leaderboard: s.leaderboard
+  })));
+
   const { 
     resources, maxCapacity, population, weather, buildings, 
     isEditMode, toggleEditMode, selectedObjectId, mapObjects, removeMapObject,
     selectedBuildingId, upgradeBuilding, era, technologies, quests, 
     activeEvents, unlockedZones, unlockZone, startResearch, villageName,
-    user: storeUser, playerName, setPaused
-  } = useGameStore();
+    user: storeUser, playerName, setPaused, isPaused,
+    isResearchOpen, setResearchOpen, isQuestsOpen, setQuestsOpen, isZonesOpen, setZonesOpen,
+    viewMode, setViewMode, combatStatus, rankedPoints, rankTier, leaderboard
+  } = state;
 
-  const [showResearch, setShowResearch] = useState(false);
-  const [showQuests, setShowQuests] = useState(false);
-  const [showZones, setShowZones] = useState(false);
-  const [showPause, setShowPause] = useState(false);
+  const [isLeaderboardOpen, setLeaderboardOpen] = useState(false);
 
   const handleOpenPause = () => {
-    setShowPause(true);
+    audioService.play('open');
     setPaused(true);
   };
 
-  const handleLogout = () => authService.logout();
+  const handleLogout = () => {
+    // Moved to Settings in MainMenu
+  };
 
   const selectedObject = mapObjects.find(o => o.id === selectedObjectId);
 
@@ -51,13 +92,16 @@ export function HUD() {
   const realWorking = Math.min(workingPop, population);
   const idlePop = Math.max(0, population - realWorking);
 
-  const isAnyGuiOpen = showResearch || showQuests || showZones || selectedBuildingId || selectedObjectId || isEditMode || showPause;
+  const isAnyGuiOpen = isResearchOpen || isQuestsOpen || isZonesOpen || selectedBuildingId || selectedObjectId || isEditMode || isPaused;
+
+  const selectedBuilding = buildings.find(b => b.id === selectedBuildingId);
+  const selectedBuildingType = selectedBuilding ? BUILDING_TYPES[selectedBuilding.typeId as keyof typeof BUILDING_TYPES] : null;
 
   return (
     <div className="fixed inset-0 pointer-events-none z-10 font-sans select-none">
       <UpgradeModal />
       <Tutorial />
-      <PauseMenu isOpen={showPause} onClose={() => setShowPause(false)} />
+      <PauseMenu isOpen={isPaused} onClose={() => setPaused(false)} />
       
       {/* --- TOP LEFT: RESOURCES & STATUS --- */}
       <AnimatePresence>
@@ -66,41 +110,51 @@ export function HUD() {
             initial={{ x: -100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
-            className="absolute top-3 left-3 flex flex-col gap-2 items-start"
+            className="absolute top-3 left-3 flex flex-col gap-2 items-start max-md:top-2 max-md:left-2"
           >
             {/* Weather & Population Bar */}
-            <div className="flex gap-1.5">
+            <div className="flex gap-1.5 max-md:gap-1">
               <motion.div 
                 animate={{ rotate: weather === 'windy' ? [0, 5, 0] : 0 }}
                 transition={{ duration: 2, repeat: Infinity }}
-                className="backdrop-blur-xl bg-black/40 border border-white/10 p-2 rounded-xl text-white pointer-events-auto flex items-center justify-center shadow-lg"
+                className="backdrop-blur-xl bg-black/40 border border-white/10 p-2 rounded-xl text-white pointer-events-auto flex items-center justify-center shadow-lg max-md:p-1.5"
               >
-                 <WeatherIcon weather={weather} size={18} />
+                 <WeatherIcon weather={weather} size={16} />
               </motion.div>
               
-              <div className="backdrop-blur-xl bg-black/40 border border-white/10 pl-3 pr-4 py-1.5 rounded-xl text-white pointer-events-auto flex items-center gap-3 shadow-xl">
-                <div className="flex items-center gap-2 border-r border-white/10 pr-3">
-                  <Users size={14} className="text-blue-300" />
+              <div className="backdrop-blur-xl bg-black/40 border border-white/10 pl-3 pr-4 py-1.5 rounded-xl text-white pointer-events-auto flex items-center gap-3 shadow-xl max-md:pl-2 max-md:pr-3 max-md:py-1 max-md:gap-2">
+                <div className="flex items-center gap-2 border-r border-white/10 pr-3 max-md:pr-2">
+                  <Users size={12} className="text-blue-300" />
                   <div className="flex flex-col">
-                    <span className="text-[10px] font-black opacity-40 uppercase tracking-tighter leading-none mb-0.5">Citizens</span>
-                    <span className="text-sm font-black tracking-tight leading-none">{population}</span>
+                    <span className="text-[8px] font-black opacity-40 uppercase tracking-tighter leading-none mb-0.5">Citizens</span>
+                    <span className="text-xs font-black tracking-tight leading-none">{population}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 max-md:gap-1.5">
                   <div className="flex flex-col items-center gap-0.5 opacity-80" title="Working">
-                     <Briefcase size={12} className="text-emerald-400" />
-                     <span className="text-[9px] font-black">{realWorking}</span>
+                     <Briefcase size={10} className="text-emerald-400" />
+                     <span className="text-[8px] font-black">{realWorking}</span>
                   </div>
                   <div className="flex flex-col items-center gap-0.5 opacity-80" title="Idle">
-                     <Coffee size={12} className="text-amber-400" />
-                     <span className="text-[9px] font-black">{idlePop}</span>
+                     <Coffee size={10} className="text-amber-400" />
+                     <span className="text-[8px] font-black">{idlePop}</span>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Resources Grid */}
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 max-md:grid max-md:grid-cols-2 max-md:gap-1">
+              <motion.div 
+                onClick={() => setLeaderboardOpen(true)}
+                className="backdrop-blur-xl bg-indigo-600/90 text-white px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-lg border border-indigo-400/50 pointer-events-auto cursor-pointer hover:bg-indigo-500 transition-all active:scale-95 max-md:col-span-2"
+              >
+                 <TrendingUp size={12} className="text-indigo-200" />
+                 <div className="flex flex-col">
+                   <span className="text-[6px] font-black uppercase tracking-widest opacity-60 leading-none mb-0.5">{rankTier} Rank</span>
+                   <span className="text-[10px] font-black tracking-tighter leading-none">{rankedPoints} RP</span>
+                 </div>
+              </motion.div>
               <ResourceItem 
                 icon={<Trees size={10} />} 
                 value={Math.floor(resources.wood)} 
@@ -123,37 +177,35 @@ export function HUD() {
                 label="Food"
                 warning={resources.food < 50}
               />
+              <motion.div 
+                initial={{ x: -20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                className="backdrop-blur-xl bg-amber-400/90 text-black px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-lg border border-yellow-300/50 pointer-events-auto"
+              >
+                <div className="bg-black/10 p-0.5 rounded-lg">
+                  <Coins size={12} className="drop-shadow-sm" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[6px] font-black uppercase tracking-widest opacity-60 leading-none mb-0.5">Gold</span>
+                  <span className="text-xs font-black tracking-tighter leading-none">{Math.floor(resources.gold).toLocaleString()}</span>
+                </div>
+              </motion.div>
             </div>
-
-            {/* Gold Counter */}
-            <motion.div 
-              initial={{ x: -20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              className="backdrop-blur-xl bg-amber-400/90 text-black px-4 py-2 rounded-xl flex items-center gap-2 shadow-lg border border-yellow-300/50 pointer-events-auto"
-            >
-              <div className="bg-black/10 p-1 rounded-lg">
-                <Coins size={16} className="drop-shadow-sm" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[7px] font-black uppercase tracking-widest opacity-60 leading-none mb-0.5">Treasury</span>
-                <span className="text-base font-black tracking-tighter leading-none">{Math.floor(resources.gold).toLocaleString()}</span>
-              </div>
-            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* --- TOP RIGHT: ERA & GLOBAL NAVIGATION --- */}
-      <div className="absolute top-3 right-3 flex flex-col items-end gap-2 pointer-events-auto">
+      <div className="absolute top-3 right-3 flex flex-col items-end gap-2 pointer-events-auto max-md:top-2 max-md:right-2">
         {/* Village Name Header */}
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none w-full">
           <motion.div 
             initial={{ y: -20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             className="flex flex-col items-center"
           >
-            <span className="text-[8px] font-black uppercase tracking-[0.4em] text-white/40 mb-1">Settlement of</span>
-            <h2 className="text-2xl font-black italic uppercase tracking-tighter text-white drop-shadow-[0_2px_10px_rgba(255,255,255,0.2)]">
+            <span className="text-[6px] font-black uppercase tracking-[0.4em] text-white/40 mb-0.5">Village of</span>
+            <h2 className="text-xl font-black italic uppercase tracking-tighter text-white drop-shadow-[0_2px_10px_rgba(255,255,255,0.2)] max-md:text-lg">
               {villageName}
             </h2>
           </motion.div>
@@ -192,9 +244,9 @@ export function HUD() {
                 exit={{ x: 100, opacity: 0 }}
                 className="flex flex-col items-end gap-1.5"
               >
-                {activeEvents.map(event => (
+                {activeEvents.map((event, idx) => (
                   <motion.div 
-                    key={event.id}
+                    key={event.id || `event-${idx}`}
                     initial={{ x: 20, opacity: 0 }}
                     animate={{ x: 0, opacity: 1 }}
                     exit={{ x: 20, opacity: 0 }}
@@ -208,43 +260,54 @@ export function HUD() {
                   </motion.div>
                 ))}
 
-                <button 
-                  onClick={handleLogout}
-                  className={`backdrop-blur-xl border px-3 py-2 rounded-xl flex items-center gap-3 transition-all relative group shadow-md ${
-                    storeUser.uid ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-white/10 text-white border-white/10'
-                  }`}
-                >
-                  <LogOut size={16} />
-                  <span className="text-[9px] font-black uppercase tracking-widest">
-                    {storeUser.uid ? playerName : 'Guest'}
-                  </span>
-                  {storeUser.isVerified && (
-                    <motion.div 
-                      animate={{ opacity: [0.4, 1, 0.4] }}
-                      transition={{ repeat: Infinity, duration: 2 }}
-                      className="w-2 h-2 bg-emerald-500 rounded-full" 
-                    />
-                  )}
-                </button>
+                {/* Logout moved to Settings */}
 
                 <TabButton 
-                  active={showQuests} 
-                  onClick={() => setShowQuests(!showQuests)}
+                  active={isQuestsOpen} 
+                  onClick={() => {
+                    audioService.play('open');
+                    setQuestsOpen(!isQuestsOpen);
+                  }}
                   icon={<ScrollText size={16} />}
                   label="Quests"
                   badge={quests.filter(q => !q.completed).length}
                 />
                 <TabButton 
-                  active={showResearch} 
-                  onClick={() => setShowResearch(!showResearch)}
+                  active={isResearchOpen} 
+                  onClick={() => {
+                    audioService.play('open');
+                    setResearchOpen(!isResearchOpen);
+                  }}
                   icon={<BookOpen size={16} />}
                   label="Tech"
                 />
                 <TabButton 
-                  active={showZones} 
-                  onClick={() => setShowZones(!showZones)}
+                  active={viewMode === 'fighting'} 
+                  onClick={() => {
+                    audioService.play('click');
+                    if (!storeUser.uid) {
+                       alert('Please login to play Multiplayer');
+                       return;
+                    }
+                    if (!storeUser.isVerified) {
+                       alert('Please verify your email to access Ranked/PvP');
+                       return;
+                    }
+                    if (viewMode === 'fighting') setViewMode('playing');
+                    else setViewMode('fighting');
+                  }}
+                  icon={<Zap size={16} />}
+                  label="Multiplayer"
+                />
+                <TabButton 
+                  active={isLeaderboardOpen} 
+                  onClick={() => {
+                    const next = !isLeaderboardOpen;
+                    setLeaderboardOpen(next);
+                    if (next) useGameStore.getState().fetchLeaderboard();
+                  }}
                   icon={<Globe size={16} />}
-                  label="Explore"
+                  label="Leaderboard"
                 />
               </motion.div>
             )}
@@ -252,14 +315,90 @@ export function HUD() {
         </div>
       </div>
 
+      {/* --- MATCHMAKING & COMBAT UI --- */}
+      <AnimatePresence>
+        {viewMode === 'fighting' && combatStatus === 'idle' && (
+          <motion.div 
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="absolute bottom-24 left-1/2 -translate-x-1/2 w-full max-w-md pointer-events-auto"
+          >
+            <div className="bg-black/80 backdrop-blur-2xl border border-white/10 p-8 rounded-[40px] shadow-2xl flex flex-col items-center gap-6">
+              <div className="flex flex-col items-center">
+                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mb-2">
+                  <Zap size={32} className="text-red-500" />
+                </div>
+                <h3 className="text-xl font-black uppercase italic tracking-tighter">Arena Gateway</h3>
+                <p className="text-xs opacity-40 font-bold uppercase tracking-widest">Real PvP Battles Only</p>
+              </div>
+              
+              <div className="w-full grid grid-cols-2 gap-4">
+                 <button 
+                  onClick={() => {
+                    audioService.play('combat');
+                    const { startMatchmaking } = useGameStore.getState();
+                    startMatchmaking();
+                  }}
+                  className="bg-red-500 hover:bg-red-400 text-black font-black py-4 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all active:scale-95 shadow-xl shadow-red-500/20"
+                 >
+                   <span className="text-xs uppercase tracking-tighter italic">Attack Real</span>
+                   <span className="text-[10px] opacity-60 uppercase font-black">Find Match</span>
+                 </button>
+                 <button className="bg-white/5 border border-white/10 hover:bg-white/10 text-white/40 hover:text-white font-black py-4 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all">
+                   <span className="text-xs uppercase tracking-tighter italic">Defenses</span>
+                   <span className="text-[10px] opacity-40 uppercase font-black">History</span>
+                 </button>
+              </div>
+              
+              <div className="flex items-center gap-3 bg-white/5 px-4 py-2 rounded-xl text-[9px] font-medium opacity-60">
+                <AlertTriangle size={12} className="text-amber-500" />
+                <span>You will be matched with a real player based on your village power.</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {combatStatus === 'searching' && (
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md pointer-events-auto"
+          >
+            <div className="flex flex-col items-center gap-6">
+               <div className="relative">
+                  <motion.div 
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+                    className="w-32 h-32 border-4 border-red-500/20 border-t-red-500 rounded-full"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Zap size={40} className="text-red-500 animate-pulse" />
+                  </div>
+               </div>
+               <div className="flex flex-col items-center">
+                 <h2 className="text-3xl font-black uppercase italic tracking-tighter text-white">Searching...</h2>
+                 <p className="text-xs text-white/40 font-black uppercase tracking-[0.3em]">Looking for real opponent</p>
+               </div>
+               <button 
+                onClick={() => useGameStore.getState().cancelMatchmaking()}
+                className="mt-4 px-8 py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] transition-all"
+               >
+                 Cancel Search
+               </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* --- FLOATING PANELS --- */}
       <AnimatePresence>
-        {showQuests && (
-          <SidePanel title="Objectives" onClose={() => setShowQuests(false)} side="right">
+        {isQuestsOpen && (
+          <SidePanel title="Objectives" onClose={() => setQuestsOpen(false)} side="right">
             <div className="flex flex-col gap-2">
-              {quests.map(q => (
+              {quests.map((q, idx) => (
                 <div 
-                  key={q.id} 
+                  key={q.id || `quest-${idx}`} 
                   className={`p-3 rounded-2xl border transition-all ${
                     q.completed 
                     ? 'bg-emerald-500/10 border-emerald-500/30' 
@@ -292,11 +431,11 @@ export function HUD() {
           </SidePanel>
         )}
 
-        {showResearch && (
-          <SidePanel title="Research" onClose={() => setShowResearch(false)} side="right">
+        {isResearchOpen && (
+          <SidePanel title="Research" onClose={() => setResearchOpen(false)} side="right">
             <div className="flex flex-col gap-2">
-              {technologies.map(tech => (
-                <div key={tech.id} className={`p-3 rounded-2xl border transition-all ${tech.unlocked ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-white/5 border-white/10'}`}>
+              {technologies.map((tech, idx) => (
+                <div key={tech.id || `tech-${idx}`} className={`p-3 rounded-2xl border transition-all ${tech.unlocked ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-white/5 border-white/10'}`}>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-[10px] font-black uppercase tracking-tight">{tech.name}</span>
                     {tech.unlocked ? <span className="text-[7px] text-indigo-400 font-black">KNOWN</span> : <span className="text-[7px] opacity-40 font-black italic">{tech.researchTime}s</span>}
@@ -327,8 +466,8 @@ export function HUD() {
           </SidePanel>
         )}
 
-        {showZones && (
-          <SidePanel title="Discovery" onClose={() => setShowZones(false)} side="right">
+        {isZonesOpen && (
+          <SidePanel title="Discovery" onClose={() => setZonesOpen(false)} side="right">
             <div className="flex flex-col gap-2">
               {MAP_ZONES.map(zone => {
                 const isUnlocked = unlockedZones.includes(zone.id);
@@ -351,6 +490,42 @@ export function HUD() {
                   </div>
                 );
               })}
+            </div>
+          </SidePanel>
+        )}
+
+        {isLeaderboardOpen && (
+          <SidePanel title="Global Ladder" onClose={() => setLeaderboardOpen(false)} side="right">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between px-2 text-[8px] font-black uppercase opacity-40 mb-1">
+                <span>Player</span>
+                <span>Power / RP</span>
+              </div>
+              {leaderboard.sort((a, b) => b.points - a.points).map((entry, idx) => (
+                <div 
+                  key={entry.userId || `leader-${idx}`} 
+                  className={`p-3 rounded-2xl border flex items-center justify-between gap-3 ${
+                    entry.userId === storeUser.uid 
+                      ? 'bg-amber-400 border-amber-300 text-black' 
+                      : 'bg-white/5 border-white/10'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-black opacity-40 w-4">#{idx + 1}</span>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase italic tracking-tighter">{entry.name}</span>
+                      <span className="text-[8px] font-bold opacity-60">Lv {entry.level} Manager</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] font-black">{entry.points} RP</span>
+                    <span className="text-[7px] font-bold opacity-40 uppercase">{entry.powerScore} Power</span>
+                  </div>
+                </div>
+              ))}
+              {leaderboard.length === 0 && (
+                <div className="p-8 text-center opacity-40 italic text-xs">Fetching world rankings...</div>
+              )}
             </div>
           </SidePanel>
         )}
@@ -425,20 +600,18 @@ function ResourceItem({ icon, value, max, color, label, warning }: { icon: React
     <motion.div 
       initial={{ x: -50, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
-      className={`backdrop-blur-xl ${bgIntensity} border pl-2 pr-3 py-1 rounded-xl flex items-center gap-3 text-white pointer-events-auto min-w-[130px] transition-all ${percentage > 95 ? 'animate-pulse' : ''}`}
+      className={`backdrop-blur-xl ${bgIntensity} border pl-1.5 pr-2 py-1 rounded-xl flex items-center gap-1.5 text-white pointer-events-auto min-w-[100px] max-md:min-w-0 transition-all ${percentage > 95 ? 'animate-pulse' : ''}`}
     >
-      <div className={`w-6 h-6 rounded-lg flex items-center justify-center shadow-md ${barColor} text-white shrink-0 transition-colors`}>
+      <div className={`w-5 h-5 rounded-lg flex items-center justify-center shadow-md ${barColor} text-white shrink-0 transition-colors`}>
         {icon}
       </div>
       <div className="flex flex-col w-full gap-0.5">
         <div className="flex justify-between items-end">
           <div className="flex items-baseline gap-1">
-            <span className="text-xs font-black italic tracking-tighter leading-none">{value.toLocaleString()}</span>
-            {percentage > 90 && <span className="text-[6px] font-black uppercase text-red-400 animate-bounce">FULL</span>}
+            <span className="text-[10px] font-black italic tracking-tighter leading-none">{value.toLocaleString()}</span>
           </div>
-          <span className="text-[7px] font-bold opacity-30 leading-none">{max.toLocaleString()}</span>
         </div>
-        <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+        <div className="w-full h-0.5 bg-white/5 rounded-full overflow-hidden">
           <motion.div 
             initial={{ width: 0 }}
             animate={{ width: `${percentage}%` }}
@@ -446,11 +619,6 @@ function ResourceItem({ icon, value, max, color, label, warning }: { icon: React
           />
         </div>
       </div>
-      {(warning || percentage > 90) && (
-        <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1 }}>
-          <AlertTriangle size={12} className={percentage > 90 ? "text-red-400" : "text-amber-400"} />
-        </motion.div>
-      )}
     </motion.div>
   );
 }
@@ -482,7 +650,7 @@ function SidePanel({ title, children, onClose, side }: { title: string, children
       initial={{ x: side === 'left' ? -350 : 350, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: side === 'left' ? -350 : 350, opacity: 0 }}
-      className={`fixed top-16 bottom-16 ${side === 'left' ? 'left-4' : 'right-12'} w-72 backdrop-blur-2xl bg-black/70 border border-white/10 rounded-[30px] shadow-2xl p-6 pointer-events-auto flex flex-col`}
+      className={`fixed top-16 bottom-16 ${side === 'left' ? 'left-4' : 'right-12'} w-72 max-md:right-4 max-md:left-4 max-md:w-auto backdrop-blur-2xl bg-black/70 border border-white/10 rounded-[30px] shadow-2xl p-6 pointer-events-auto flex flex-col z-50`}
     >
       <div className="flex justify-between items-center mb-6">
         <h3 className="text-base font-black uppercase tracking-[0.1em] text-white italic border-b border-amber-500 pb-0.5">{title}</h3>

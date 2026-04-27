@@ -4,36 +4,63 @@
  */
 
 import React, { useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useGameStore, BUILDING_TYPES } from '../../store/useGameStore';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ArrowUpCircle, Info, TrendingUp, ShoppingBag } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
+import { audioService } from '../../services/audioService';
+
 export function UpgradeModal() {
-  const { selectedBuildingId, selectBuilding, buildings, upgradeBuilding, resources, sellResource, startMoving } = useGameStore();
+  const state = useGameStore(useShallow(s => ({
+    selectedBuildingId: s.selectedBuildingId,
+    selectBuilding: s.selectBuilding,
+    buildings: s.buildings,
+    upgradeBuilding: s.upgradeBuilding,
+    resources: s.resources,
+    sellResource: s.sellResource,
+    startMoving: s.startMoving,
+    maxCapacity: s.maxCapacity
+  })));
+
+  const { 
+    selectedBuildingId, selectBuilding, buildings, upgradeBuilding, 
+    resources, sellResource, startMoving, maxCapacity 
+  } = state;
+
   const [activeTab, setActiveTab] = useState<'upgrade' | 'trade'>('upgrade');
 
   const b = buildings.find(item => item.id === selectedBuildingId);
-  if (!b) return null;
+  
+  if (!b || !selectedBuildingId) {
+    return (
+      <AnimatePresence>
+        {null}
+      </AnimatePresence>
+    );
+  }
 
   const type = BUILDING_TYPES[b.typeId as keyof typeof BUILDING_TYPES];
   const isMarket = b.typeId === 'market';
+  const isStorage = b.typeId === 'storage';
   const isConstructing = b.isConstructing;
-
+ 
   const upgradeCost = {
     wood: (type.cost.wood || 0) * b.level,
     stone: (type.cost.stone || 0) * b.level,
     gold: (type.cost.gold || 0) * b.level,
   };
-
+ 
   const canAfford = 
     !isConstructing &&
     resources.wood >= (upgradeCost.wood || 0) && 
     resources.stone >= (upgradeCost.stone || 0) && 
     resources.gold >= (upgradeCost.gold || 0);
-
+ 
   const handleUpgrade = () => {
     if (canAfford) {
+      audioService.play('build');
       upgradeBuilding(b.id);
       confetti({
         particleCount: 100,
@@ -62,7 +89,7 @@ export function UpgradeModal() {
             className="relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-[40px] w-full max-w-sm overflow-hidden shadow-2xl text-white pointer-events-auto"
           >
             {/* Header */}
-            <div className={`p-8 bg-gradient-to-br ${isMarket ? 'from-amber-500 to-orange-600' : 'from-indigo-500 to-purple-600'} text-white relative`}>
+            <div className={`p-8 bg-gradient-to-br ${isMarket ? 'from-amber-500 to-orange-600' : isStorage ? 'from-emerald-500 to-teal-600' : 'from-indigo-500 to-purple-600'} text-white relative`}>
               <button 
                 onClick={() => selectBuilding(null)}
                 className="absolute top-6 right-6 p-2 hover:bg-white/20 rounded-full transition-colors"
@@ -93,19 +120,19 @@ export function UpgradeModal() {
             </div>
 
             {/* Tabs */}
-            {isMarket && (
+            {(isMarket || isStorage) && (
               <div className="flex bg-black/20 p-1 mx-8 mt-6 rounded-2xl border border-white/10">
                  <button 
                   onClick={() => setActiveTab('upgrade')}
                   className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'upgrade' ? 'bg-white/10 shadow-lg text-white' : 'text-white/40'}`}
                  >
-                   Core
+                    Upgrade
                  </button>
                  <button 
                   onClick={() => setActiveTab('trade')}
                   className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'trade' ? 'bg-white/10 shadow-lg text-white' : 'text-white/40'}`}
                  >
-                   Market
+                    {isMarket ? 'Market' : 'Storage'}
                  </button>
               </div>
             )}
@@ -163,7 +190,7 @@ export function UpgradeModal() {
                     </p>
                   </div>
                 </>
-              ) : (
+              ) : isMarket ? (
                 <div className="space-y-6">
                    <div className="space-y-4">
                       <TradeEntry 
@@ -189,12 +216,44 @@ export function UpgradeModal() {
                       />
                    </div>
                 </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-4">
+                    <StorageBar label="Wood Capacity" current={resources.wood} max={maxCapacity.wood} color="bg-amber-600" />
+                    <StorageBar label="Stone Capacity" current={resources.stone} max={maxCapacity.stone} color="bg-slate-500" />
+                    <StorageBar label="Food Capacity" current={resources.food} max={maxCapacity.food} color="bg-emerald-600" />
+                    <StorageBar label="Gold Capacity" current={resources.gold} max={maxCapacity.gold} color="bg-yellow-500" />
+                  </div>
+                  <div className="bg-white/5 p-4 rounded-2xl border border-white/10 flex items-center gap-3">
+                    <Info size={16} className="text-amber-400" />
+                    <p className="text-[9px] opacity-60 font-medium">Build more warehouses to increase your total storage capacity for all resources.</p>
+                  </div>
+                </div>
               )}
             </div>
           </motion.div>
         </div>
       )}
     </AnimatePresence>
+  );
+}
+
+function StorageBar({ label, current, max, color }: { label: string, current: number, max: number, color: string }) {
+  const percentage = Math.min((current / max) * 100, 100);
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-white/40">
+        <span>{label}</span>
+        <span className={percentage > 90 ? 'text-red-400' : 'text-white'}>{Math.floor(current)} / {max}</span>
+      </div>
+      <div className="w-full h-3 bg-black/40 rounded-full overflow-hidden border border-white/10 p-0.5">
+        <motion.div 
+          initial={{ width: 0 }}
+          animate={{ width: `${percentage}%` }}
+          className={`h-full ${percentage > 90 ? 'bg-red-500 animate-pulse' : color} rounded-full transition-all duration-1000`}
+        />
+      </div>
+    </div>
   );
 }
 

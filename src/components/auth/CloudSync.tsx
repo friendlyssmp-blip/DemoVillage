@@ -46,7 +46,9 @@ export function CloudSync() {
         });
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.GET, profilePath);
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.GET, profilePath);
+      }
     });
 
     return () => unsubscribe();
@@ -59,8 +61,8 @@ export function CloudSync() {
     const villagePath = `villages/${user.uid}`;
     const rewardPath = `users/${user.uid}/dailyRewards/state`;
     
-    // Listen to village
-    const unsubVillage = onSnapshot(doc(db, villagePath), (docSnap) => {
+    // Listen to village (One-time fetch instead of onSnapshot to prevent fighting)
+    getDoc(doc(db, villagePath)).then((docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         useGameStore.setState({
@@ -108,10 +110,16 @@ export function CloudSync() {
           tutorialStep: state.tutorialStep,
           lastResourceRegen: state.lastResourceRegen,
           lastActive: Date.now()
-        }).catch(err => handleFirestoreError(err, OperationType.CREATE, villagePath));
+        }).catch(err => {
+      if (auth.currentUser) {
+        handleFirestoreError(err, OperationType.CREATE, villagePath);
       }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, villagePath);
+    });
+      }
+    }).catch(error => {
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.GET, villagePath);
+      }
     });
 
     // Listen to rewards
@@ -123,10 +131,13 @@ export function CloudSync() {
           lastDailyClaim: data.lastClaimed || 0,
         });
       }
-    }, (error) => handleFirestoreError(error, OperationType.GET, rewardPath));
+    }, (error) => {
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.GET, rewardPath);
+      }
+    });
 
     return () => {
-      unsubVillage();
       unsubRewards();
     };
   }, [user.uid, user.profile]);

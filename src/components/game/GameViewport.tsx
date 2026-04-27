@@ -5,14 +5,15 @@
 
 import React, { Suspense, useEffect, useState } from 'react';
 import { useThree, useFrame, Canvas } from '@react-three/fiber';
+import { useShallow } from 'zustand/react/shallow';
 import { MapControls, Sky, Stars, ContactShadows, Environment, Float, Cloud } from '@react-three/drei';
 import { useGameStore, MAP_ZONES } from '../../store/useGameStore';
 import { Terrain } from './Terrain';
 import { Building } from './Building';
 import { Unit } from './Unit';
-import { Worker } from './Worker';
 import { MapObjects } from './MapObjects';
 import { BuildingPlacement } from './BuildingPlacement';
+import { InstancedWorkers } from './InstancedWorkers';
 import * as THREE from 'three';
 
 function WeatherEffects() {
@@ -39,11 +40,6 @@ function WeatherEffects() {
               </mesh>
             ))}
          </Float>
-      )}
-      {(weather === 'stormy' || weather === 'rainy') && (
-        <group>
-           <Cloud opacity={0.5} speed={0.4} segments={20} position={[0, 15, 0]} color="#444444" />
-        </group>
       )}
       {weather === 'stormy' && (
         <Float speed={20} floatIntensity={0} rotationIntensity={0}>
@@ -145,11 +141,34 @@ function ZonesVisualizer() {
   );
 }
 
+function CameraController({ onUpdate }: { onUpdate: (pos: [number, number, number]) => void }) {
+  const { camera } = useThree();
+  useFrame(() => {
+    onUpdate([camera.position.x, camera.position.y, camera.position.z]);
+  });
+  return null;
+}
+
 export function GameViewport({ menuMode = false, combatMode = false }: { menuMode?: boolean, combatMode?: boolean }) {
+  const state = useGameStore(useShallow(s => ({
+    buildings: s.buildings,
+    enemyBuildings: s.enemyBuildings,
+    npcs: s.npcs,
+    selectedBuildingId: s.selectedBuildingId,
+    tick: s.tick,
+    movingBuildingId: s.movingBuildingId,
+    isPlacementMode: s.isPlacementMode,
+    isCameraLocked: s.isCameraLocked,
+    combatStatus: s.combatStatus,
+    isPaused: s.isPaused,
+    updateCamera: s.updateCamera,
+    visibleChunks: s.visibleChunks
+  })));
+
   const { 
     buildings, enemyBuildings, npcs, selectedBuildingId, tick, movingBuildingId, 
-    isPlacementMode, isCameraLocked, combatStatus, isPaused
-  } = useGameStore();
+    isPlacementMode, isCameraLocked, combatStatus, isPaused, updateCamera, visibleChunks
+  } = state;
 
   useEffect(() => {
     let lastTime = performance.now();
@@ -166,6 +185,23 @@ export function GameViewport({ menuMode = false, combatMode = false }: { menuMod
   const showControls = !isCameraLocked && !movingBuildingId && !isPlacementMode && !menuMode && combatStatus !== 'searching' && combatStatus !== 'attacking' && !isPaused;
   const activeBuildings = combatMode ? enemyBuildings : buildings;
 
+  // Filter buildings by chunk to save rendering/processing
+  const CHUNK_SIZE = 40;
+  const culledBuildings = React.useMemo(() => activeBuildings.filter(b => {
+    if (combatMode) return true; // Show all enemy buildings in combat
+    const cx = Math.floor(b.position[0] / CHUNK_SIZE);
+    const cz = Math.floor(b.position[1] / CHUNK_SIZE);
+    return visibleChunks.includes(`${cx},${cz}`);
+  }), [activeBuildings, visibleChunks, combatMode]);
+
+  const culledNpcs = React.useMemo(() => npcs.filter(n => {
+    if (n.buildingId === movingBuildingId) return false;
+    // Cull NPCs by chunk
+    const cx = Math.floor(n.position[0] / CHUNK_SIZE);
+    const cz = Math.floor(n.position[2] / CHUNK_SIZE);
+    return visibleChunks.includes(`${cx},${cz}`);
+  }), [npcs, visibleChunks, movingBuildingId]);
+
   return (
     <div className="w-full h-full bg-[#050510]">
       <Canvas 
@@ -174,6 +210,7 @@ export function GameViewport({ menuMode = false, combatMode = false }: { menuMod
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
       >
         <Suspense fallback={null}>
+          <CameraController onUpdate={updateCamera} />
           <InteractionManager />
           <GlobalLighting />
           {(menuMode || combatStatus === 'searching') && <MenuCameraControls />}
@@ -184,7 +221,7 @@ export function GameViewport({ menuMode = false, combatMode = false }: { menuMod
           <ZonesVisualizer />
           <BuildingPlacement />
 
-          {activeBuildings.map((b) => (
+          {culledBuildings.map((b) => (
             <group key={b.id}>
               {movingBuildingId === b.id ? (
                 <MovingBuilding building={b} />
@@ -208,16 +245,12 @@ export function GameViewport({ menuMode = false, combatMode = false }: { menuMod
              <Unit key={unit.id} unit={unit} />
           ))}
 
-          {npcs.filter(n => n.buildingId !== movingBuildingId).map((n) => (
-            <Worker 
-              key={n.id}
-              position={new THREE.Vector3(...n.position)} 
-              isWorking={true}
-              role={n.role}
-            />
-          ))}
+          <InstancedWorkers />
 
-          <ContactShadows resolution={1024} scale={40} blur={2} opacity={0.2} far={15} color="#000000" />
+          {useGameStore.getState().settings.graphicsQuality === 'high' && (
+            <ContactShadows resolution={512} scale={40} blur={2} opacity={0.2} far={15} color="#000000" />
+          )}
+
           
           <MapControls 
             makeDefault 
@@ -233,6 +266,15 @@ export function GameViewport({ menuMode = false, combatMode = false }: { menuMod
         </Suspense>
       </Canvas>
     </div>
+  );
+}
+
+function Worker({ position, role }: { position: THREE.Vector3, isWorking: boolean, role: string }) {
+  return (
+    <mesh position={[position.x, position.y + 0.3, position.z]}>
+      <sphereGeometry args={[0.3, 8, 8]} />
+      <meshStandardMaterial color={role === 'warrior' ? '#ff4444' : '#4488ff'} />
+    </mesh>
   );
 }
 

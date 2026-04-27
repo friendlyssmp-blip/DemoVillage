@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { Box, Cylinder, Sphere, Text, Float, Html } from '@react-three/drei';
+import { useShallow } from 'zustand/react/shallow';
 import { useGameStore, BUILDING_TYPES } from '../../store/useGameStore';
 import { motion } from 'motion/react';
 
@@ -21,10 +22,23 @@ interface BuildingProps {
 }
 
 export function Building({ id, typeId, level, position, rotation, progress, isSelected, health, maxHealth }: BuildingProps) {
-  const selectBuilding = useGameStore((state) => state.selectBuilding);
-  const isEditMode = useGameStore((state) => state.isEditMode);
-  const startMoving = useGameStore((state) => state.startMoving);
-  const movingBuildingId = useGameStore((state) => state.movingBuildingId);
+  const state = useGameStore(useShallow((s) => ({
+    selectBuilding: s.selectBuilding,
+    isEditMode: s.isEditMode,
+    startMoving: s.startMoving,
+    movingBuildingId: s.movingBuildingId,
+    viewMode: s.viewMode,
+    isResearchOpen: s.isResearchOpen,
+    isQuestsOpen: s.isQuestsOpen,
+    isZonesOpen: s.isZonesOpen,
+    isPaused: s.isPaused
+  })));
+
+  const {
+    selectBuilding, isEditMode, startMoving, movingBuildingId,
+    viewMode, isResearchOpen, isQuestsOpen, isZonesOpen, isPaused
+  } = state;
+
   const type = BUILDING_TYPES[typeId as keyof typeof BUILDING_TYPES];
   const [hovered, setHovered] = useState(false);
 
@@ -39,14 +53,13 @@ export function Building({ id, typeId, level, position, rotation, progress, isSe
     }
   };
 
-  const viewMode = useGameStore((state) => state.viewMode);
   const isConstructing = progress < 1;
   const isEnemy = id.startsWith('enemy-');
 
-  // Labels should only be visible when in active gameplay views
-  const showLabels = (viewMode === 'playing' || viewMode === 'fighting');
+  const showLabels = (viewMode === 'playing' || viewMode === 'fighting') && 
+                     !isResearchOpen && !isQuestsOpen && !isZonesOpen && !isPaused && !isEditMode;
 
-  const renderModel = () => {
+  const model = React.useMemo(() => {
     // Construction Phases
     if (progress < 1) {
       return (
@@ -264,7 +277,7 @@ export function Building({ id, typeId, level, position, rotation, progress, isSe
       default:
         return <Box args={[1, 1, 1]}><meshStandardMaterial color="magenta" /></Box>;
     }
-  };
+  }, [type, level, progress]);
 
   return (
     <group 
@@ -275,7 +288,7 @@ export function Building({ id, typeId, level, position, rotation, progress, isSe
       onPointerOut={() => setHovered(false)}
     >
       <group position={[0, 0.01, 0]}>
-        {renderModel()}
+        {model}
       </group>
       
       {!isConstructing && showLabels && (

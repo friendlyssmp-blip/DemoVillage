@@ -116,8 +116,8 @@ export function SocialMenu() {
                     <p className="text-sm">Start searching for allies!</p>
                   </div>
                 )}
-                {friends.map((friend) => (
-                  <FriendCard key={friend.username} friend={friend} />
+                {friends.map((friend, idx) => (
+                  <FriendCard key={friend.uid || `friend-${idx}`} friend={friend} />
                 ))}
               </div>
             )}
@@ -130,8 +130,8 @@ export function SocialMenu() {
                       <p className="text-lg font-black uppercase">Inbox clear</p>
                    </div>
                 )}
-                {friendRequests.map((req) => (
-                  <RequestCard key={req.id} request={req} />
+                {friendRequests.map((req, idx) => (
+                  <RequestCard key={req.id || `req-${idx}`} request={req} />
                 ))}
               </div>
             )}
@@ -158,8 +158,8 @@ export function SocialMenu() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {searchResults.map((result) => (
-                    <div key={result.uid} className="p-6 rounded-[32px] bg-white/5 border border-white/5 flex items-center justify-between hover:bg-white/10 transition-all">
+                  {searchResults.map((result, idx) => (
+                    <div key={result.uid || `search-${idx}`} className="p-6 rounded-[32px] bg-white/5 border border-white/5 flex items-center justify-between hover:bg-white/10 transition-all">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center font-black text-white text-xl">
                           {result.username?.[0].toUpperCase()}

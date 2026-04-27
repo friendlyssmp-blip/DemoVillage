@@ -23,7 +23,8 @@ export interface LeaderboardEntry {
   population: number;
   level: number;
   rank: number;
-  points?: number;
+  points: number;
+  powerScore: number;
 }
 
 export interface Clan {
@@ -176,6 +177,7 @@ export interface UnitInstance {
 export type CombatStatus = 'idle' | 'searching' | 'attacking' | 'victory' | 'defeat';
 
 export interface UserProfile {
+  uid?: string;
   username: string;
   villageName: string;
   level: number;
@@ -222,6 +224,23 @@ export interface GameState {
   viewMode: ViewMode;
   isCameraLocked: boolean;
   isPaused: boolean;
+  isResearchOpen: boolean;
+  isQuestsOpen: boolean;
+  isZonesOpen: boolean;
+  tickCount: number;
+  lastUpdate: number;
+  
+  // Infinite World & Optimization
+  cameraPosition: [number, number, number];
+  visibleChunks: string[];
+  
+  // Real Multiplayer
+  matchmakingQueueStartTime: number | null;
+  rankedPoints: number;
+  rankTier: 'Bronze' | 'Silver' | 'Gold' | 'Platinum' | 'Diamond' | 'Elite';
+  opponentVillage: BuildingInstance[] | null;
+  opponentName: string | null;
+
   settings: {
     soundVolume: number;
     graphicsQuality: 'low' | 'medium' | 'high';

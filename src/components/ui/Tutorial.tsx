@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useShallow } from 'zustand/react/shallow';
 import { useGameStore } from '../../store/useGameStore';
 import { CheckCircle2, ChevronRight } from 'lucide-react';
 
@@ -57,7 +58,10 @@ const STEPS = [
 ];
 
 export function Tutorial() {
-  const { tutorialStep, nextTutorial } = useGameStore();
+  const { tutorialStep, nextTutorial } = useGameStore(useShallow(s => ({
+    tutorialStep: s.tutorialStep,
+    nextTutorial: s.nextTutorial
+  })));
 
   if (tutorialStep >= STEPS.length) return null;
 

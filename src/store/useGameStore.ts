@@ -6,6 +6,11 @@ import {
   Technology, Quest, Zone, WorldEvent, ViewMode, LeaderboardEntry, OfflineSummary,
   UnitInstance, CombatStatus
 } from '../types';
+import { 
+  doc, setDoc, getDoc, collection, query, where, getDocs, 
+  limit, serverTimestamp, updateDoc, increment, arrayUnion, Timestamp
+} from 'firebase/firestore';
+import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 
 export const BUILDING_TYPES: Record<string, BuildingType> = {
   townhall: {
@@ -13,7 +18,7 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     name: 'Primal Hub',
     description: 'The heart of your village. Unlocks new buildings.',
     cost: { gold: 0 },
-    production: {},
+    production: { gold: 0.1 },
     capacityBonus: { wood: 500, stone: 500, food: 500, gold: 1000 },
     model: 'townhall' as const,
     npcCount: 0,
@@ -31,7 +36,6 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     npcCount: 2,
     requiredEra: 'primal',
     size: 2,
-    baseMaintenance: { food: 5 },
   },
   quarry: {
     id: 'quarry',
@@ -44,7 +48,6 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     npcCount: 2,
     requiredEra: 'primal',
     size: 2,
-    baseMaintenance: { food: 5 },
   },
   farm: {
     id: 'farm',
@@ -66,10 +69,9 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     production: { gold: 0.5 },
     capacityBonus: { gold: 1000 },
     model: 'market' as const,
-    npcCount: 1,
+    npcCount: 2,
     requiredEra: 'colonial',
     size: 2,
-    baseMaintenance: { gold: 10 },
   },
   barracks: {
     id: 'barracks',
@@ -82,7 +84,6 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     npcCount: 4,
     requiredEra: 'colonial',
     size: 3,
-    baseMaintenance: { food: 20, gold: 5 },
   },
   lab: {
     id: 'lab',
@@ -92,10 +93,9 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     production: {},
     capacityBonus: {},
     model: 'lab' as const,
-    npcCount: 1,
+    npcCount: 2,
     requiredEra: 'colonial',
     size: 2,
-    baseMaintenance: { food: 10, gold: 20 },
   },
   factory: {
     id: 'factory',
@@ -105,10 +105,9 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     production: { wood: 5.0, stone: 5.0 },
     capacityBonus: { wood: 2000, stone: 2000 },
     model: 'factory' as const,
-    npcCount: 0,
+    npcCount: 5,
     requiredEra: 'industrial',
     size: 3,
-    baseMaintenance: { gold: 100 },
   },
   warehouse: {
     id: 'warehouse',
@@ -133,7 +132,6 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     npcCount: 3,
     requiredEra: 'colonial',
     size: 3,
-    baseMaintenance: { gold: 50 },
   },
   forge: {
     id: 'forge',
@@ -146,7 +144,6 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     npcCount: 2,
     requiredEra: 'colonial',
     size: 2,
-    baseMaintenance: { wood: 10, stone: 10 },
   },
   observatory: {
     id: 'observatory',
@@ -156,10 +153,9 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     production: { gold: 5.0 },
     capacityBonus: { gold: 5000 },
     model: 'lab' as const,
-    npcCount: 1,
+    npcCount: 2,
     requiredEra: 'industrial',
     size: 2,
-    baseMaintenance: { gold: 150 },
   }
 };
 
@@ -242,7 +238,14 @@ interface GameStore extends GameState {
   setViewMode: (mode: ViewMode) => void;
   setCameraLocked: (locked: boolean) => void;
   setPaused: (paused: boolean) => void;
+  setResearchOpen: (open: boolean) => void;
+  setQuestsOpen: (open: boolean) => void;
+  setZonesOpen: (open: boolean) => void;
   updateSettings: (settings: Partial<GameState['settings']>) => void;
+  syncVillage: () => Promise<void>;
+  saveProgress: () => Promise<void>;
+  fetchLeaderboard: () => Promise<void>;
+  updateCamera: (pos: [number, number, number]) => void;
   startMatchmaking: () => void;
   cancelMatchmaking: () => void;
   deployUnit: (type: 'soldier' | 'archer' | 'heavy', position: [number, number]) => void;
@@ -319,6 +322,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
   viewMode: 'menu',
   isCameraLocked: false,
   isPaused: false,
+  isResearchOpen: false,
+  isQuestsOpen: false,
+  isZonesOpen: false,
+  
+  // Infinite World
+  cameraPosition: [25, 25, 25],
+  visibleChunks: [],
+  
+  // Real Multiplayer
+  matchmakingQueueStartTime: null,
+  rankedPoints: 0,
+  rankTier: 'Bronze',
+  opponentVillage: null,
+  opponentName: null,
+
   settings: {
     soundVolume: 0.8,
     graphicsQuality: 'high',
@@ -328,9 +346,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   playerName: 'Chief Village',
   villageName: 'The Sanctuary',
   leaderboard: [
-    { userId: '1', name: 'Zaltar', gold: 50000, population: 150, level: 12, rank: 1 },
-    { userId: '2', name: 'Elder Oak', gold: 35000, population: 120, level: 10, rank: 2 },
-    { userId: '3', name: 'Nova', gold: 28000, population: 90, level: 8, rank: 3 },
+    { userId: '1', name: 'Zaltar', gold: 50000, population: 150, level: 12, rank: 1, points: 2500, powerScore: 5000 },
+    { userId: '2', name: 'Elder Oak', gold: 35000, population: 120, level: 10, rank: 2, points: 2100, powerScore: 4200 },
+    { userId: '3', name: 'Nova', gold: 28000, population: 90, level: 8, rank: 3, points: 1800, powerScore: 3600 },
   ],
   units: [],
   enemyBuildings: [],
@@ -346,26 +364,77 @@ export const useGameStore = create<GameStore>((set, get) => ({
   clanChat: [],
   dailyRewardStreak: 0,
   lastDailyClaim: 0,
+  tickCount: 0,
+  lastUpdate: Date.now(),
 
-  startMatchmaking: () => {
-    set({ combatStatus: 'searching', viewMode: 'fighting', units: [], selectedCombatUnit: 'soldier' });
-    setTimeout(() => {
-      // Only transition if we are still searching
-      if (get().combatStatus !== 'searching') return;
+  startMatchmaking: async () => {
+    set({ 
+       combatStatus: 'searching', 
+       viewMode: 'fighting', 
+       units: [], 
+       selectedCombatUnit: 'soldier',
+       matchmakingQueueStartTime: Date.now() 
+    });
 
-      const { buildings } = get();
-      // Generate a mock enemy logic by slightly shuffling buildings
-      const enemyBuildings = buildings.map(b => ({
-        ...b,
-        id: `enemy-${b.id}`,
-        health: 500 * (b.level || 1),
-        maxHealth: 500 * (b.level || 1),
-      }));
-      set({ enemyBuildings, combatStatus: 'attacking' });
-    }, 2000);
+    try {
+      const { user, buildings, npcs } = get();
+      const currentPower = buildings.length * 100 + buildings.reduce((sum, b) => sum + b.level, 0) * 50 + npcs.length * 10;
+      
+      // Real competitive matchmaking: Find players within a power score range
+      // and who have been active recently.
+      const playersRef = collection(db, 'villages');
+      const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const yesterday = Timestamp.fromDate(yesterdayDate);
+      
+      const q = query(
+        playersRef, 
+        where('lastSynced', '>=', yesterday),
+        limit(100)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const candidates = querySnapshot.docs
+        .filter(doc => doc.id !== user.uid)
+        .map(doc => ({ id: doc.id, ...(doc.data() as any) }))
+        .filter(p => {
+          // Allow +/- 30% power score variance for a match
+          const diff = Math.abs(p.powerScore - currentPower);
+          return (diff / Math.max(1, currentPower)) < 0.4;
+        });
+
+      // Simulation of "waiting" for better immersion and actual search time
+      const waitTime = Math.random() * 2000 + 1000;
+      await new Promise(r => setTimeout(r, waitTime));
+
+      if (candidates.length > 0) {
+        // Pick the closest match by power score
+        candidates.sort((a, b) => Math.abs(a.powerScore - currentPower) - Math.abs(b.powerScore - currentPower));
+        const opponent = candidates[0];
+        
+        const enemyBuildings = opponent.buildings.map((b: any) => ({
+          ...b,
+          id: `enemy-${b.id}`,
+          health: 500 * (b.level || 1),
+          maxHealth: 500 * (b.level || 1),
+        }));
+
+        set({ 
+          enemyBuildings, 
+          opponentName: opponent.playerName || 'Rival Chief',
+          combatStatus: 'attacking',
+          matchmakingQueueStartTime: null
+        });
+      } else {
+        set({ combatStatus: 'idle', viewMode: 'playing', matchmakingQueueStartTime: null });
+        alert('No suitable real opponents found. Stay training and try again later!');
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, 'villages');
+      set({ combatStatus: 'idle', viewMode: 'playing', matchmakingQueueStartTime: null });
+    }
   },
 
-  cancelMatchmaking: () => set({ combatStatus: 'idle' }),
+  cancelMatchmaking: () => set({ combatStatus: 'idle', viewMode: 'playing', matchmakingQueueStartTime: null }),
 
   deployUnit: (type: 'soldier' | 'archer' | 'heavy', position: [number, number]) => {
     const { units } = get();
@@ -388,7 +457,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   })),
 
   recalculateCapacity: () => {
-    const { buildings, technologies } = get();
+    const { buildings, technologies, syncVillage } = get();
     const baseCapacity = { wood: 1000, stone: 1000, food: 1000, gold: 2000 };
     const newMaxCapacity = { ...baseCapacity };
 
@@ -497,19 +566,121 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setViewMode: (viewMode) => set({ viewMode }),
   setCameraLocked: (isCameraLocked) => set({ isCameraLocked }),
   setPaused: (isPaused) => set({ isPaused }),
+  setResearchOpen: (isResearchOpen) => set({ isResearchOpen }),
+  setQuestsOpen: (isQuestsOpen) => set({ isQuestsOpen }),
+  setZonesOpen: (isZonesOpen) => set({ isZonesOpen }),
   updateSettings: (newSettings) => set((state) => ({ 
     settings: { ...state.settings, ...newSettings } 
   })),
 
-  addResource: (type, amount) => set((state) => ({
-    resources: {
-      ...state.resources,
-      [type]: Math.min(state.resources[type] + amount, state.maxCapacity[type])
+  saveProgress: async () => {
+    const { syncVillage } = get();
+    await syncVillage();
+  },
+
+  // Village Synchronization
+  syncVillage: async () => {
+    const { user, buildings, resources, era, villageName, playerName, npcs, unlockedZones, technologies, rankedPoints, rankTier } = get();
+    if (!user.uid) return;
+
+    const powerScore = buildings.length * 100 + buildings.reduce((sum, b) => sum + b.level, 0) * 50 + npcs.length * 10;
+
+    try {
+      await setDoc(doc(db, 'villages', user.uid), {
+        buildings,
+        resources,
+        era,
+        villageName,
+        playerName,
+        npcsCount: npcs.length,
+        unlockedZones,
+        technologies: technologies.map(t => ({ id: t.id, unlocked: t.unlocked })),
+        rankedPoints,
+        rankTier,
+        lastSynced: serverTimestamp(),
+        level: buildings.reduce((sum, b) => sum + (b.isConstructing ? 0 : b.level), 0),
+        powerScore: powerScore
+      }, { merge: true });
+    } catch (err: any) {
+      if (err.code === 'permission-denied') {
+        console.warn('Sync failed: Permission denied. Ensure you are logged in correctly.');
+      } else {
+        console.error('Failed to sync village:', err);
+      }
     }
-  })),
+  },
+
+  fetchLeaderboard: async () => {
+    try {
+      const villagesRef = collection(db, 'villages');
+      // Sort by rankedPoints (descending) and limit to top 50
+      const q = query(villagesRef, where('rankedPoints', '>', 0), limit(50));
+      const querySnapshot = await getDocs(q);
+      
+      const entries: LeaderboardEntry[] = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          userId: doc.id,
+          name: data.playerName || 'Unnamed Chief',
+          gold: data.resources?.gold || 0,
+          population: data.npcsCount || 0,
+          level: data.level || 1,
+          rank: 0, // Calculated on display or sort
+          points: data.rankedPoints || 0,
+          powerScore: data.powerScore || 0
+        };
+      });
+
+      // Local sort to handle any firestore index lag or complex multi-field sorts
+      entries.sort((a, b) => b.points - a.points);
+      
+      set({ leaderboard: entries });
+    } catch (err) {
+      console.error('Failed to fetch leaderboard:', err);
+    }
+  },
+
+  updateCamera: (pos: [number, number, number]) => {
+    const CHUNK_SIZE = 40;
+    const { visibleChunks, cameraPosition } = get();
+    
+    // Throttling: Only update if camera moved significantly (e.g., 5 units)
+    const distSq = (pos[0] - cameraPosition[0])**2 + (pos[2] - cameraPosition[2])**2;
+    if (distSq < 25) return;
+
+    const chunkX = Math.floor(pos[0] / CHUNK_SIZE);
+    const chunkZ = Math.floor(pos[2] / CHUNK_SIZE);
+    
+    const newVisible: string[] = [];
+    const RENDER_DISTANCE = 1; // 3x3 chunks
+    
+    for(let x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; x++) {
+      for(let z = -RENDER_DISTANCE; z <= RENDER_DISTANCE; z++) {
+        newVisible.push(`${chunkX + x},${chunkZ + z}`);
+      }
+    }
+
+    const visibleChanged = JSON.stringify(newVisible) !== JSON.stringify(visibleChunks);
+    if (visibleChanged || distSq > 100) {
+      set({ visibleChunks: newVisible, cameraPosition: pos });
+    }
+  },
+
+  addResource: (type, amount) => {
+    const { resources, maxCapacity, syncVillage } = get();
+    const newAmount = Math.min(resources[type] + amount, maxCapacity[type]);
+    set((state) => ({
+      resources: {
+        ...state.resources,
+        [type]: newAmount
+      }
+    }));
+    // Sync critical resources immediately
+    if (type === 'gold') syncVillage();
+  },
 
   spendResources: (cost) => {
-    const { resources } = get();
+    const { resources, syncVillage } = get();
     const canAfford = Object.entries(cost).every(([type, amt]) => resources[type as keyof Resources] >= (amt || 0));
     
     if (canAfford) {
@@ -518,15 +689,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
         nextResources[type as keyof Resources] -= (amt || 0);
       });
       set({ resources: nextResources });
+      syncVillage(); // Push change immediately
       return true;
     }
     return false;
   },
 
   addNpcsToBuilding: (buildingId, count, typeId, position) => {
+    const { npcs } = get();
+    // Population Cap: 50 NPCs max for performance
+    if (npcs.length >= 50) return;
+    
     const type = BUILDING_TYPES[typeId as keyof typeof BUILDING_TYPES];
     const newNpcs: NPCInstance[] = [];
-    for(let i=0; i<count; i++) {
+    const actualCount = Math.min(count, 50 - npcs.length);
+
+    for(let i=0; i<actualCount; i++) {
         let role: any = 'worker';
         let npcType: 'worker' | 'warrior' = 'worker';
         if (typeId === 'lumberjack') role = 'lumberjack';
@@ -593,6 +771,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }));
 
       get().addNpcsToBuilding(newBuilding.id, type.npcCount, typeId, position);
+      get().syncVillage();
     }
   },
 
@@ -781,55 +960,60 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const dt = delta / 1000;
     const now = Date.now();
 
-    // 1. Update NPC Stats (Hunger, Age, Efficiency)
-    const updatedNpcs = npcs.map(npc => {
-      const hungerLoss = (0.05 + Math.random() * 0.05) * dt;
-      const nextHunger = Math.max(npc.hunger - hungerLoss, 0);
-      
-      // Efficiency based on hunger and tech
-      let efficiencyMult = 1.0;
-      if (nextHunger < 20) efficiencyMult = 0.5;
-      else if (nextHunger < 50) efficiencyMult = 0.8;
-
-      const techBonus = technologies
+    // PERFORMANCE: Calculate fixed bonuses once per tick
+    const techEfficiencyBonus = technologies
         .filter(t => t.unlocked && t.effect.type === 'efficiency')
         .reduce((sum, t) => sum + t.effect.value, 0);
-      
-      efficiencyMult += techBonus;
 
-      return {
-        ...npc,
-        hunger: nextHunger,
-        age: npc.age + dt,
-        efficiency: efficiencyMult
-      };
-    }).filter(npc => npc.age < npc.lifespan); // Remove dead NPCs
+    const eventMult = activeEvents.reduce((acc, e) => acc * e.multiplier, 1);
+
+    // 1. Update NPC Stats (Hunger, Age, Efficiency) - THROTTLED every 10 ticks
+    const tickCount = (get() as any).tickCount || 0;
+    const shouldUpdateNpcStats = tickCount % 10 === 0;
+
+    let updatedNpcs = npcs;
+    if (shouldUpdateNpcStats) {
+        updatedNpcs = npcs.map(npc => {
+          const hungerLoss = (0.05 + Math.random() * 0.05) * dt * 10;
+          const nextHunger = Math.max(npc.hunger - hungerLoss, 0);
+          
+          let efficiencyMult = 1.0;
+          if (nextHunger < 20) efficiencyMult = 0.5;
+          else if (nextHunger < 50) efficiencyMult = 0.8;
+    
+          efficiencyMult += techEfficiencyBonus;
+    
+          return {
+            ...npc,
+            hunger: nextHunger,
+            age: npc.age + dt * 10,
+            efficiency: efficiencyMult
+          };
+        }).filter(npc => npc.age < npc.lifespan);
+    }
+
+    // Pre-group NPCs by building for O(1) production lookup per building
+    const npcsByBuilding: Record<string, number> = {};
+    updatedNpcs.forEach(n => {
+        npcsByBuilding[n.buildingId] = (npcsByBuilding[n.buildingId] || 0) + 1;
+    });
 
     // 2. Resource Consumption
     let foodShortage = false;
-    const foodConsumed = updatedNpcs.length * 0.1 * dt; // Workers eat more
+    const foodConsumed = updatedNpcs.length * 0.08 * dt; 
     let nextFood = resources.food - foodConsumed;
     if (nextFood < 0) {
       nextFood = 0;
       foodShortage = true;
     }
 
-    // 3. Maintenance Cost
     let nextGold = resources.gold;
-    buildings.forEach(b => {
-      const type = BUILDING_TYPES[b.typeId as keyof typeof BUILDING_TYPES];
-      if (type.baseMaintenance) {
-        if (type.baseMaintenance.gold) nextGold -= type.baseMaintenance.gold * b.level * dt * 0.1;
-      }
-    });
-
+ 
     // 4. Update Research
     const updatedTechs = technologies.map(tech => {
       if (tech.isResearching) {
         const nextProgress = tech.progress + (dt / tech.researchTime);
-        if (nextProgress >= 1) {
-          return { ...tech, progress: 1, isResearching: false, unlocked: true };
-        }
+        if (nextProgress >= 1) return { ...tech, progress: 1, isResearching: false, unlocked: true };
         return { ...tech, progress: nextProgress };
       }
       return tech;
@@ -838,44 +1022,37 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 5. Update Buildings and Production
     let capacityChanged = false;
     const nextResources = { 
-      ...resources, 
-      food: nextFood, 
-      gold: Math.max(nextGold, 0) 
+        ...resources, 
+        food: nextFood, 
+        gold: Math.max(nextGold, 0) 
     };
 
     const updatedBuildings = buildings.map(b => {
       if (b.isConstructing) {
         const nextProgress = Math.min(b.progress + dt * (1 / 15), 1);
-        if (nextProgress >= 1 && !b.isConstructing) {
-            // Already handled below
-        }
-        if (nextProgress >= 1 && b.isConstructing) {
-            capacityChanged = true;
-        }
+        if (nextProgress >= 1) capacityChanged = true;
         return { ...b, progress: nextProgress, isConstructing: nextProgress < 1, lastUpdate: now };
       }
 
       const type = BUILDING_TYPES[b.typeId as keyof typeof BUILDING_TYPES];
       
-      // Production with Efficiency
-      const workers = updatedNpcs.filter(npc => npc.buildingId === b.id);
-      const avgEfficiency = workers.length > 0 
-        ? workers.reduce((sum, n) => sum + n.efficiency, 0) / workers.length 
-        : 0;
+      const workerCount = npcsByBuilding[b.id] || 0;
+      const workforceMult = workerCount > 0 ? 0.8 + (workerCount / (type.npcCount || 1)) * 0.2 : 0.2;
 
       Object.entries(type.production).forEach(([res, rate]) => {
         const key = res as ResourceType;
-        let multiplier = b.level * avgEfficiency;
-        
-        // Event multiplier
-        const eventMult = activeEvents.reduce((acc, e) => acc * e.multiplier, 1);
-        multiplier *= eventMult;
-
+        const multiplier = b.level * workforceMult * eventMult;
         nextResources[key] = Math.min(nextResources[key] + rate * multiplier * dt, maxCapacity[key]);
       });
 
       return b;
     });
+
+    // Throttled Auto-Sync: Every 2 minutes (120 seconds)
+    const shouldAutoSync = tickCount > 0 && tickCount % (60 * 120) === 0; // Assuming 60 ticks per second (approx)
+    if (shouldAutoSync) {
+        setTimeout(() => get().syncVillage(), 0);
+    }
 
     if (capacityChanged) {
       setTimeout(() => get().recalculateCapacity(), 0);
@@ -892,19 +1069,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ lastResourceRegen: now });
     }
 
-    // 7. Quest Tracking
     const updatedQuests = quests.map(q => {
       if (q.completed) return q;
       let progress = 0;
       switch (q.requirement.type) {
         case 'build':
-          progress = buildings.filter(b => b.typeId === q.requirement.target && !b.isConstructing).length;
+          progress = updatedBuildings.filter(b => b.typeId === q.requirement.target && !b.isConstructing).length;
           break;
         case 'population':
           progress = updatedNpcs.length;
           break;
         case 'collect':
-          progress = resources[q.requirement.target as keyof Resources];
+          progress = nextResources[q.requirement.target as keyof Resources];
           break;
       }
       if (progress >= q.requirement.amount) {
@@ -945,25 +1121,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { units, enemyBuildings, combatStatus } = get();
     let combatUpdates = {};
     if (combatStatus === 'attacking' && units.length > 0) {
+      const nextEnemyBuildings = [...enemyBuildings];
       const nextUnits = units.map(u => {
         if (u.health <= 0) return u;
 
-        const targets = enemyBuildings.filter(eb => eb.health > 0);
+        const targets = nextEnemyBuildings.filter(eb => eb.health > 0);
         if (targets.length === 0) return { ...u, state: 'idle' as const };
 
-        let nearest = targets[0];
+        let nearestIdx = -1;
         let minDist = Infinity;
-        targets.forEach(t => {
+        targets.forEach((t, idx) => {
           const dx = t.position[0] - u.position[0];
           const dz = t.position[1] - u.position[1];
           const dist = Math.sqrt(dx*dx + dz*dz);
           if (dist < minDist) {
             minDist = dist;
-            nearest = t;
+            nearestIdx = nextEnemyBuildings.indexOf(t);
           }
         });
 
         if (minDist > 2) {
+          const nearest = nextEnemyBuildings[nearestIdx];
           const dx = nearest.position[0] - u.position[0];
           const dz = nearest.position[1] - u.position[1];
           const vx = (dx / minDist) * 2 * dt;
@@ -975,22 +1153,58 @@ export const useGameStore = create<GameStore>((set, get) => ({
           };
         } else {
           // Attack!
-          nearest.health = Math.max(0, (nearest.health || 0) - (15 * dt * (u.type === 'heavy' ? 2 : 1)));
+          const dmg = 15 * dt * (u.type === 'heavy' ? 2 : 1);
+          nextEnemyBuildings[nearestIdx] = {
+            ...nextEnemyBuildings[nearestIdx],
+            health: Math.max(0, (nextEnemyBuildings[nearestIdx].health || 0) - dmg)
+          };
           return { ...u, state: 'attacking' as const };
         }
       }).filter(u => u.health > 0);
 
-      const townhall = enemyBuildings.find(eb => eb.typeId === 'townhall');
+      const townhall = nextEnemyBuildings.find(eb => eb.typeId === 'townhall');
       let nextStatus: CombatStatus = combatStatus;
       if (townhall && townhall.health <= 0) {
         nextStatus = 'victory';
+        // Multiplier Reward for real victory
+        const { rankedPoints } = get();
+        const gainedPoints = 25 + Math.floor(Math.random() * 10);
+        const newPoints = rankedPoints + gainedPoints;
+        
+        // Calculate new tier
+        let nextTier: any = 'Bronze';
+        if (newPoints >= 2500) nextTier = 'Elite';
+        else if (newPoints >= 2000) nextTier = 'Diamond';
+        else if (newPoints >= 1500) nextTier = 'Platinum';
+        else if (newPoints >= 1000) nextTier = 'Gold';
+        else if (newPoints >= 500) nextTier = 'Silver';
+
+        nextResources.gold += 2000;
+        nextResources.wood += 500;
+
+        setTimeout(() => {
+          alert(`VICTORY! You have conquered ${get().opponentName}'s village! Rewards: 2000 Gold, 500 Wood, +${gainedPoints} RP.`);
+          set({ rankedPoints: newPoints, rankTier: nextTier });
+          get().syncVillage();
+          set({ combatStatus: 'idle', viewMode: 'playing' });
+        }, 100);
       } else if (nextUnits.length === 0 && units.length > 0) {
         nextStatus = 'defeat';
+        const { rankedPoints } = get();
+        const lostPoints = 15;
+        const newPoints = Math.max(0, rankedPoints - lostPoints);
+        
+        setTimeout(() => {
+          alert(`DEFEAT! Your forces were repelled by ${get().opponentName}. -${lostPoints} RP.`);
+          set({ rankedPoints: newPoints });
+          get().syncVillage();
+          set({ combatStatus: 'idle', viewMode: 'playing' });
+        }, 100);
       }
 
       combatUpdates = {
         units: nextUnits,
-        enemyBuildings: [...enemyBuildings], // Health updated in place in the loop above for simplicity, but cleaner to map
+        enemyBuildings: nextEnemyBuildings,
         combatStatus: nextStatus
       };
     }
@@ -1006,7 +1220,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       weather: nextWeather,
       timeOfDay: nextTime,
       mapObjects: updatedMapObjects,
-      ...combatUpdates
+      ...combatUpdates,
+      tickCount: tickCount + 1,
+      lastUpdate: now
     });
   }
 }));

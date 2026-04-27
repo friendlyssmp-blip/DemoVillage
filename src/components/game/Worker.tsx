@@ -7,6 +7,7 @@ import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Sphere, Cylinder, Box } from '@react-three/drei';
 import * as THREE from 'three';
+import { useGameStore } from '../../store/useGameStore';
 
 interface WorkerProps {
   position: THREE.Vector3;
@@ -17,9 +18,21 @@ interface WorkerProps {
 export function Worker({ position, isWorking, role }: WorkerProps) {
   const meshRef = useRef<THREE.Group>(null);
   const armsRef = useRef<THREE.Group>(null);
+  const { cameraPosition } = useGameStore();
 
   useFrame((state) => {
     if (!meshRef.current) return;
+    
+    // Performance optimization: Entity Culling
+    // Check distance to camera
+    const dx = position.x - state.camera.position.x;
+    const dy = position.y - state.camera.position.y;
+    const dz = position.z - state.camera.position.z;
+    const distSq = dx*dx + dy*dy + dz*dz;
+    
+    // If very far, stop simulation (frustum culling handles render, but we stop animations here)
+    if (distSq > 2500) return; // 50 units away
+
     const t = state.clock.getElapsedTime();
 
     if (isWorking) {

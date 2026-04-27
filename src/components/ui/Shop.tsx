@@ -12,13 +12,17 @@ import {
 import { useGameStore } from '../../store/useGameStore';
 import { ResourceType } from '../../types';
 
+import { audioService } from '../../services/audioService';
+
 export function Shop() {
   const { setViewMode, resources, addResource, spendResources } = useGameStore();
 
   const buyResources = (type: ResourceType, amount: number, costGold: number) => {
     if (spendResources({ gold: costGold })) {
+      audioService.play('collect');
       addResource(type, amount);
     } else {
+      audioService.play('close');
       alert('Not enough Gold!');
     }
   };
