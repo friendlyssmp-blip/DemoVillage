@@ -8,22 +8,51 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, Shield, Trophy, MessageSquare, 
   Plus, Search, X, ChevronRight, 
-  User, Crown, Map, Swords, Star
+  User, Crown, Map, Swords, Star, LogOut
 } from 'lucide-react';
 import { useGameStore } from '../../store/useGameStore';
 import { clanService } from '../../services/clanService';
+import { UserPlus, ShieldAlert, Trash2, ArrowUpCircle } from 'lucide-react';
 
 export function ClanMenu() {
-  const { setViewMode, activeClan, user, playerName } = useGameStore();
+  const { setViewMode, activeClan, clanMembers, user, playerName } = useGameStore();
   const [clans, setClans] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'clans' | 'members' | 'war'>('clans');
   const [showCreate, setShowCreate] = useState(false);
   const [clanName, setClanName] = useState('');
   const [clanDesc, setClanDesc] = useState('');
+  
+  const [confirmAction, setConfirmAction] = useState<{ type: 'kick' | 'promote' | 'leave', member?: any, newRole?: string } | null>(null);
 
   useEffect(() => {
     clanService.getClans().then(setClans);
   }, []);
+
+  const handleAction = async () => {
+    if (!confirmAction || !activeClan) return;
+    
+    try {
+      if (confirmAction.type === 'kick') {
+        await clanService.kickMember(activeClan.id, confirmAction.member.uid);
+      } else if (confirmAction.type === 'promote' && confirmAction.newRole) {
+        await clanService.promoteMember(activeClan.id, confirmAction.member.uid, confirmAction.newRole);
+      } else if (confirmAction.type === 'leave') {
+        await clanService.leaveClan(activeClan.id);
+      }
+      setConfirmAction(null);
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const getMemberRole = (uid: string) => {
+    return clanMembers.find(m => m.uid === uid)?.role || 'member';
+  };
+
+  const myRole = user.uid ? getMemberRole(user.uid) : 'member';
+  const isLeader = myRole === 'leader';
+  const isCoLeader = myRole === 'co-leader';
+  const canManage = isLeader || isCoLeader;
 
   const handleCreate = async () => {
     if (!clanName.trim()) return;
@@ -69,7 +98,12 @@ export function ClanMenu() {
               </div>
            </div>
            <div className="flex gap-4">
-              <button className="px-8 py-4 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl font-black uppercase text-xs hover:bg-red-500 hover:text-white transition-all">Leave Clan</button>
+              <button 
+  onClick={() => setConfirmAction({ type: 'leave' })}
+  className="px-8 py-4 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl font-black uppercase text-xs hover:bg-red-500 hover:text-white transition-all"
+>
+  Leave Clan
+</button>
               <button 
                 onClick={() => setViewMode('menu')}
                 className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center border border-white/10 hover:bg-white/10 transition-all font-black"
@@ -96,24 +130,64 @@ export function ClanMenu() {
            <div className="flex-1 overflow-y-auto p-12 bg-white/[0.02]">
               {activeTab === 'members' && (
                 <div className="max-w-4xl space-y-4">
-                   <div className="grid grid-cols-4 px-6 opacity-30 text-[9px] font-black uppercase tracking-widest mb-2">
-                     <span>Player</span>
+                   <div className="grid grid-cols-5 px-6 opacity-30 text-[9px] font-black uppercase tracking-widest mb-2">
+                     <span className="col-span-2">Player</span>
                      <span>Role</span>
                      <span className="text-right">Level</span>
-                     <span className="text-right">Donations</span>
+                     <span className="text-right">Actions</span>
                    </div>
-                   {[1, 2, 3].map(i => (
-                     <div key={i} className="p-6 rounded-[32px] bg-white/5 border border-white/5 flex items-center justify-between">
-                        <div className="grid grid-cols-4 items-center flex-1">
-                           <div className="flex items-center gap-4">
+                   {clanMembers.map(member => (
+                     <div key={member.uid} className="p-6 rounded-[32px] bg-white/5 border border-white/5 flex items-center justify-between">
+                        <div className="grid grid-cols-5 items-center flex-1">
+                           <div className="flex items-center gap-4 col-span-2">
                               <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center text-white/40">
-                                {i === 1 ? <Crown size={18} className="text-amber-500" /> : <User size={18} />}
+                                {member.role === 'leader' ? <Crown size={18} className="text-amber-500" /> : member.role === 'co-leader' ? <Shield size={18} className="text-indigo-400" /> : member.role === 'officer' ? <Shield size={18} className="text-emerald-400" /> : <User size={18} />}
                               </div>
-                              <span className="font-black text-white italic uppercase">{i === 1 ? playerName : `Brother_${i}`}</span>
+                              <div className="flex flex-col">
+                                <span className="font-black text-white italic uppercase truncate max-w-[120px]">{member.username || 'Mysterious Warrior'}</span>
+                                {member.uid === user.uid && <span className="text-[8px] font-bold text-amber-500/60 uppercase tracking-widest leading-none">You</span>}
+                              </div>
                            </div>
-                           <span className="text-[10px] font-black uppercase text-white/40">{i === 1 ? 'LEADER' : 'MEMBER'}</span>
-                           <span className="text-right text-xs font-black text-white">Lv 12</span>
-                           <span className="text-right text-xs font-black text-emerald-400">+520</span>
+                           <span className="text-[9px] font-black uppercase text-white/40">{member.role || 'MEMBER'}</span>
+                           <span className="text-right text-xs font-black text-white">Lv {member.level || 1}</span>
+                           
+                           <div className="flex justify-end gap-2">
+                              {canManage && member.uid !== user.uid && (
+                                 <>
+                                    {(isLeader || (isCoLeader && member.role !== 'leader' && member.role !== 'co-leader')) && (
+                                       <div className="flex gap-1">
+                                          {member.role === 'member' && (
+                                             <button 
+                                               onClick={() => setConfirmAction({ type: 'promote', member, newRole: 'officer' })}
+                                               className="p-2 bg-emerald-500/10 text-emerald-500 rounded-lg hover:bg-emerald-500 hover:text-white transition-all shadow-sm"
+                                               title="Promote to Officer"
+                                             >
+                                                <ArrowUpCircle size={14} />
+                                             </button>
+                                          )}
+                                          {isLeader && member.role === 'officer' && (
+                                             <button 
+                                               onClick={() => setConfirmAction({ type: 'promote', member, newRole: 'co-leader' })}
+                                               className="p-2 bg-indigo-500/10 text-indigo-500 rounded-lg hover:bg-indigo-500 hover:text-white transition-all shadow-sm"
+                                               title="Promote to Co-Leader"
+                                             >
+                                                <Crown size={14} />
+                                             </button>
+                                          )}
+                                       </div>
+                                    )}
+                                    {(isLeader || (isCoLeader && (member.role === 'member' || member.role === 'officer'))) && (
+                                       <button 
+                                          onClick={() => setConfirmAction({ type: 'kick', member })}
+                                          className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                                          title="Kick Member"
+                                       >
+                                          <Trash2 size={14} />
+                                       </button>
+                                    )}
+                                 </>
+                              )}
+                           </div>
                         </div>
                      </div>
                    ))}
@@ -196,6 +270,41 @@ export function ClanMenu() {
     </div>
 
       <AnimatePresence>
+        {confirmAction && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-3xl p-4"
+          >
+            <div className="max-w-md w-full bg-[#0a0a1a] border border-white/10 rounded-[48px] p-10 space-y-8 text-center">
+               <div className="w-20 h-20 bg-amber-500/10 rounded-full flex items-center justify-center text-amber-500 mx-auto border border-amber-500/20">
+                  {confirmAction.type === 'kick' ? <Trash2 size={40} /> : confirmAction.type === 'leave' ? <LogOut size={40} /> : <ArrowUpCircle size={40} />}
+               </div>
+               <div>
+                  <h3 className="text-3xl font-black text-white uppercase italic tracking-tighter">
+                    {confirmAction.type === 'kick' ? 'Kick Member' : confirmAction.type === 'leave' ? 'Leave Clan' : 'Promote Member'}
+                  </h3>
+                  <p className="text-white/40 font-bold mt-2">
+                    {confirmAction.type === 'kick' 
+                      ? `Are you sure you want to expel ${confirmAction.member?.username || 'this warrior'} from the clan?`
+                      : confirmAction.type === 'leave'
+                      ? 'Are you sure you want to leave your clan and lose your rank?'
+                      : `Promote ${confirmAction.member?.username || 'this warrior'} to ${confirmAction.newRole}?`
+                    }
+                  </p>
+               </div>
+               <div className="flex gap-4">
+                  <button onClick={() => setConfirmAction(null)} className="flex-1 py-4 bg-white/5 text-white/40 font-black rounded-3xl uppercase text-xs tracking-widest">Cancel</button>
+                  <button 
+                    onClick={handleAction}
+                    className={`flex-1 py-4 font-black rounded-3xl uppercase italic text-xs tracking-widest shadow-xl transition-all ${confirmAction.type === 'kick' ? 'bg-red-500 text-white shadow-red-500/20' : 'bg-amber-500 text-black shadow-amber-500/20'}`}
+                  >
+                    Confirm
+                  </button>
+               </div>
+            </div>
+          </motion.div>
+        )}
+
         {showCreate && (
           <motion.div 
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}

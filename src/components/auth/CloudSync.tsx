@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { useGameStore } from '../../store/useGameStore';
 import { GameState } from '../../types';
@@ -68,14 +68,14 @@ export function CloudSync() {
         useGameStore.setState({
           playerName: data.username || 'Chief',
           villageName: data.villageName || 'New Village',
-          resources: data.resources,
-          maxCapacity: data.maxCapacity,
-          buildings: data.buildings,
-          npcs: data.npcs,
+          resources: data.resources || { wood: 400, stone: 200, food: 400, gold: 1000 },
+          maxCapacity: data.maxCapacity || { wood: 1000, stone: 1000, food: 1000, gold: 5000 },
+          buildings: data.buildings || [],
+          npcs: data.npcs || [],
           mapObjects: data.mapObjects || [],
-          technologies: data.technologies,
+          technologies: data.technologies || [],
           quests: data.quests,
-          activeEvents: data.activeEvents || [],
+          activeLiveEvents: data.activeLiveEvents || [],
           unlockedZones: data.unlockedZones || ['core'],
           era: data.era || 'primal',
           weather: data.weather || 'sunny',
@@ -100,7 +100,7 @@ export function CloudSync() {
           mapObjects: state.mapObjects,
           technologies: state.technologies,
           quests: state.quests,
-          activeEvents: state.activeEvents,
+          activeLiveEvents: state.activeLiveEvents,
           unlockedZones: state.unlockedZones,
           era: state.era,
           weather: state.weather,
@@ -109,6 +109,7 @@ export function CloudSync() {
           gridSize: state.gridSize,
           tutorialStep: state.tutorialStep,
           lastResourceRegen: state.lastResourceRegen,
+          lastSynced: serverTimestamp(),
           lastActive: Date.now()
         }).catch(err => {
       if (auth.currentUser) {
@@ -163,7 +164,7 @@ export function CloudSync() {
         mapObjects: state.mapObjects,
         technologies: state.technologies,
         quests: state.quests,
-        activeEvents: state.activeEvents,
+        activeLiveEvents: state.activeLiveEvents,
         unlockedZones: state.unlockedZones,
         era: state.era,
         weather: state.weather,
@@ -172,6 +173,7 @@ export function CloudSync() {
         gridSize: state.gridSize,
         tutorialStep: state.tutorialStep,
         lastResourceRegen: state.lastResourceRegen,
+        lastSynced: serverTimestamp(),
         lastActive: Date.now()
       }, { merge: true }).catch(err => handleFirestoreError(err, OperationType.UPDATE, villagePath));
 

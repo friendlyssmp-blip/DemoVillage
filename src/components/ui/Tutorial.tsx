@@ -86,7 +86,7 @@ export function Tutorial() {
               </div>
               <motion.div 
                 animate={{ scale: [1, 1.2, 1] }}
-                transition={{ repeat: Infinity, duration: 2 }}
+                transition={{ repeat: Infinity, duration: 2, type: 'tween' }}
                 className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full blur-[2px] opacity-40" 
               />
             </div>

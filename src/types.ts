@@ -14,6 +14,20 @@ export interface Resources {
   gold: number;
 }
 
+export type TroopType = 'warrior' | 'archer' | 'tank' | 'scout';
+
+export interface TroopStats {
+  id: TroopType;
+  name: string;
+  health: number;
+  damage: number;
+  speed: number;
+  range: number;
+  cost: Partial<Resources>;
+  capacity: number;
+  priority: 'any' | 'defense' | 'resource';
+}
+
 export type ViewMode = 'menu' | 'playing' | 'fighting' | 'ranked' | 'settings' | 'shop' | 'clan' | 'friends';
 
 export interface LeaderboardEntry {
@@ -63,7 +77,7 @@ export interface BuildingType {
   cost: Partial<Resources>;
   production: Partial<Record<ResourceType, number>>;
   capacityBonus: Partial<Resources>;
-  model: 'townhall' | 'lumberjack' | 'quarry' | 'farm' | 'storage' | 'market' | 'barracks' | 'kitchen' | 'lab' | 'factory';
+  model: 'townhall' | 'lumberjack' | 'quarry' | 'farm' | 'storage' | 'market' | 'barracks' | 'kitchen' | 'lab' | 'factory' | 'torch' | 'goblin_hut' | 'forge' | 'training' | 'warehouse' | 'tower' | 'mortar' | 'trap';
   npcCount: number;
   requiredEra: EraType;
   size: number; // Footprint: 1 for 1x1, 2 for 2x2, 3 for 3x3
@@ -166,15 +180,61 @@ export interface OfflineSummary {
 
 export interface UnitInstance {
   id: string;
-  type: 'soldier' | 'archer' | 'heavy';
+  type: TroopType;
   position: [number, number];
   health: number;
   maxHealth: number;
-  level: number;
+  targetId: string | null;
   state: 'idle' | 'moving' | 'attacking';
+  deployedAt: number;
 }
 
-export type CombatStatus = 'idle' | 'searching' | 'attacking' | 'victory' | 'defeat';
+export interface DeploymentAction {
+  type: TroopType;
+  position: [number, number];
+  timestamp: number;
+}
+
+export interface BattleReplay {
+  id: string;
+  opponentName: string;
+  opponentVillage: BuildingInstance[];
+  deployments: DeploymentAction[];
+  randomSeed: number;
+  result: CombatStatus;
+  destruction: number;
+  date: number;
+}
+
+export interface ShopItem {
+  id: string;
+  name: string;
+  description: string;
+  type: 'resource' | 'boost' | 'equipment';
+  cost: { type: ResourceType; amount: number };
+  value: any;
+  icon: string;
+}
+
+export interface Equipment {
+  id: string;
+  type: 'weapon' | 'armor' | 'accessory';
+  name: string;
+  bonus: {
+    damage?: number;
+    health?: number;
+    speed?: number;
+  };
+}
+
+export interface CraftingJob {
+  id: string;
+  equipmentId: string;
+  startTime: number;
+  duration: number;
+}
+
+export type CombatStatus = 'idle' | 'searching' | 'attacking' | 'victory' | 'defeat' | 'draw' | 'matchmaking_failed';
 
 export interface UserProfile {
   uid?: string;
@@ -204,7 +264,7 @@ export interface GameState {
   mapObjects: MapObject[];
   technologies: Technology[];
   quests: Quest[];
-  activeEvents: WorldEvent[];
+  activeLiveEvents: LiveEvent[];
   unlockedZones: string[];
   era: EraType;
   weather: WeatherType;
@@ -229,6 +289,7 @@ export interface GameState {
   isZonesOpen: boolean;
   tickCount: number;
   lastUpdate: number;
+  resourceNotifications: { id: string, type: ResourceType, amount: number, timestamp: number }[];
   
   // Infinite World & Optimization
   cameraPosition: [number, number, number];
@@ -253,15 +314,92 @@ export interface GameState {
   units: UnitInstance[];
   enemyBuildings: BuildingInstance[];
   combatStatus: CombatStatus;
-  selectedCombatUnit: 'soldier' | 'archer' | 'heavy';
+  selectedCombatUnit: TroopType;
+  
+  // Battle System
+  army: Record<TroopType, number>;
+  troopTraining: { type: TroopType, startTime: number, duration: number }[];
+  maxArmyCapacity: number;
+  battleTimeLeft: number;
+  destructionPercentage: number;
+  lastDeploymentTime: number;
+  battleStartTime: number | null;
   
   // Social & Multiplayer
   clans: Clan[];
   activeClan: Clan | null;
+  clanMembers: any[];
   friends: UserProfile[];
   friendRequests: FriendRequest[];
   globalChat: ChatMessage[];
   clanChat: ChatMessage[];
   dailyRewardStreak: number;
   lastDailyClaim: number;
+  
+  // New Systems
+  replays: BattleReplay [];
+  isReplaying: boolean;
+  activeReplay: BattleReplay | null;
+  replayTime: number;
+  replaySpeed: number;
+  recordedActions: DeploymentAction[];
+  
+  dailyShop: {
+    items: ShopItem[];
+    lastReset: number;
+  };
+  
+  inventory: Equipment[];
+  craftingQueue: CraftingJob[];
+  researchLevels: Record<string, number>;
+
+  // Seasons & Live Events
+  season: {
+    current: number;
+    startTime: number;
+    endTime: number;
+    name: string;
+  };
+  seasonPass: {
+    level: number;
+    xp: number;
+    nextLevelXp: number;
+    isPremium: boolean;
+    claimedFree: number[]; // indices of claimed rewards
+    claimedPremium: number[];
+  };
+  dailyMissions: DailyMission[];
+}
+
+export interface SeasonPassReward {
+  level: number;
+  type: 'resource' | 'gold' | 'skin' | 'boost';
+  value: any;
+  isPremium: boolean;
+  name: string;
+}
+
+export interface DailyMission {
+  id: string;
+  title: string;
+  description: string;
+  type: 'collect' | 'build' | 'fight' | 'upgrade' | 'research' | 'win';
+  target: string;
+  requirement: number;
+  progress: number;
+  xpReward: number;
+  goldReward: number;
+  completed: boolean;
+  claimed: boolean;
+}
+
+export interface LiveEvent {
+  id: string;
+  type: 'production_boost' | 'upgrade_speed' | 'goblin_raid' | 'harvest_fest' | 'gold_rush';
+  name: string;
+  description: string;
+  multiplier: number;
+  status: 'active' | 'upcoming' | 'expired';
+  startTime: number;
+  endTime: number;
 }

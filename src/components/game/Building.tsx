@@ -4,12 +4,14 @@
  */
 
 import React, { useState } from 'react';
-import { Box, Cylinder, Sphere, Text, Float, Html } from '@react-three/drei';
+import { Box, Cylinder, Sphere, Text, Float, Html, Cone } from '@react-three/drei';
 import { useShallow } from 'zustand/react/shallow';
 import { useGameStore, BUILDING_TYPES } from '../../store/useGameStore';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion-3d';
+import { springTransition } from '../../lib/animations';
 
 interface BuildingProps {
+// ...
   id: string;
   typeId: string;
   level: number;
@@ -31,12 +33,13 @@ export function Building({ id, typeId, level, position, rotation, progress, isSe
     isResearchOpen: s.isResearchOpen,
     isQuestsOpen: s.isQuestsOpen,
     isZonesOpen: s.isZonesOpen,
-    isPaused: s.isPaused
+    isPaused: s.isPaused,
+    isAnyMenuOpen: s.isAnyMenuOpen
   })));
 
   const {
     selectBuilding, isEditMode, startMoving, movingBuildingId,
-    viewMode, isResearchOpen, isQuestsOpen, isZonesOpen, isPaused
+    viewMode, isResearchOpen, isQuestsOpen, isZonesOpen, isPaused, isAnyMenuOpen
   } = state;
 
   const type = BUILDING_TYPES[typeId as keyof typeof BUILDING_TYPES];
@@ -57,47 +60,11 @@ export function Building({ id, typeId, level, position, rotation, progress, isSe
   const isEnemy = id.startsWith('enemy-');
 
   const showLabels = (viewMode === 'playing' || viewMode === 'fighting') && 
-                     !isResearchOpen && !isQuestsOpen && !isZonesOpen && !isPaused && !isEditMode;
+                     !isAnyMenuOpen() && !isEditMode;
 
-  const model = React.useMemo(() => {
-    // Construction Phases
-    if (progress < 1) {
-      return (
-        <group>
-          {/* Foundation Phase (0 - 0.33) */}
-          <Box args={[1.6, 0.1, 1.6]} position={[0, 0.05, 0]}>
-            <meshStandardMaterial color="#555555" />
-          </Box>
-          
-          {/* Framework Phase (0.33 - 0.66) */}
-          {progress > 0.33 && (
-            <group>
-              <Box args={[0.1, 1.5 * ((progress - 0.33) / 0.67), 0.1]} position={[0.7, 0.75 * ((progress - 0.33) / 0.33), 0.7]}>
-                <meshStandardMaterial color="#8b4513" />
-              </Box>
-              <Box args={[0.1, 1.5 * ((progress - 0.33) / 0.67), 0.1]} position={[-0.7, 0.75 * ((progress - 0.33) / 0.33), -0.7]}>
-                <meshStandardMaterial color="#8b4513" />
-              </Box>
-              <Box args={[0.1, 1.5 * ((progress - 0.33) / 0.67), 0.1]} position={[0.7, 0.75 * ((progress - 0.33) / 0.33), -0.7]}>
-                <meshStandardMaterial color="#8b4513" />
-              </Box>
-              <Box args={[0.1, 1.5 * ((progress - 0.33) / 0.67), 0.1]} position={[-0.7, 0.75 * ((progress - 0.33) / 0.33), 0.7]}>
-                <meshStandardMaterial color="#8b4513" />
-              </Box>
-            </group>
-          )}
-
-          {/* Scaffolding Wrap */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.7, 0]}>
-             <boxGeometry args={[1.7, 1.7, 1.4]} />
-             <meshStandardMaterial color="#8b4513" wireframe />
-          </mesh>
-        </group>
-      );
-    }
-
+  const finalModel = React.useMemo(() => {
     const baseScale = type.size || 1;
-    const levelScale = (1 + (Math.log2(level) * 0.15)) * (baseScale / 2); // Visible growth and base footprint scaling
+    const levelScale = (1 + (Math.log2(level) * 0.15)) * (baseScale / 2);
 
     switch (type.model) {
       case 'townhall':
@@ -183,15 +150,12 @@ export function Building({ id, typeId, level, position, rotation, progress, isSe
       case 'storage':
         return (
           <group scale={levelScale}>
-            {/* Main Warehouse Structure */}
             <Box args={[1.8, 1.4, 1.8]} position={[0, 0.7, 0]} castShadow>
                <meshStandardMaterial color="#5d4037" />
             </Box>
-            {/* Roof */}
             <Box args={[2, 0.3, 2]} position={[0, 1.5, 0]} rotation={[0.05, 0, 0]}>
                <meshStandardMaterial color="#212121" />
             </Box>
-            {/* Decorative Crates */}
             <group position={[0.6, 0.3, 0.6]}>
                <Box args={[0.5, 0.5, 0.5]} position={[0, 0, 0]} castShadow>
                   <meshStandardMaterial color="#8b4513" />
@@ -200,7 +164,6 @@ export function Building({ id, typeId, level, position, rotation, progress, isSe
                   <meshStandardMaterial color="#a1887f" />
                </Box>
             </group>
-            {/* Stone Stack */}
             <group position={[-0.7, 0.2, 0.5]}>
                <Sphere args={[0.25, 8, 8]} position={[0, 0, 0]}>
                   <meshStandardMaterial color="#757575" />
@@ -212,11 +175,9 @@ export function Building({ id, typeId, level, position, rotation, progress, isSe
                   <meshStandardMaterial color="#616161" />
                </Sphere>
             </group>
-            {/* Doorway */}
             <Box args={[0.6, 0.9, 0.1]} position={[0, 0.45, 0.91]}>
                <meshStandardMaterial color="#3e2723" />
             </Box>
-            {/* Level indicator containers */}
             {level > 1 && (
               <group position={[0, 1.65, 0]}>
                  <Box args={[0.4, 0.2, 0.4]} position={[0, 0, 0]}>
@@ -274,22 +235,168 @@ export function Building({ id, typeId, level, position, rotation, progress, isSe
              </Box>
            </group>
          );
+      case 'tower':
+         return (
+           <group scale={levelScale}>
+             <Box args={[1.2, 3, 1.2]} position={[0, 1.5, 0]} castShadow>
+                <meshStandardMaterial color="#37474f" />
+             </Box>
+             <Box args={[1.6, 0.4, 1.6]} position={[0, 3.2, 0]}>
+                <meshStandardMaterial color="#263238" />
+             </Box>
+             {/* Battlements */}
+             {[[-0.7, -0.7], [0.7, -0.7], [0.7, 0.7], [-0.7, 0.7]].map((pos, i) => (
+               <Box key={i} args={[0.3, 0.4, 0.3]} position={[pos[0], 3.4, pos[1]]}>
+                 <meshStandardMaterial color="#263238" />
+               </Box>
+             ))}
+             {/* Archer inside */}
+             <group position={[0, 3.4, 0]}>
+                <Sphere args={[0.2, 8, 8]} position={[0, 0, 0]}>
+                   <meshStandardMaterial color="#4ade80" />
+                </Sphere>
+                <Box args={[0.4, 0.1, 0.05]} position={[0, -0.1, 0.2]}>
+                   <meshStandardMaterial color="#5d4037" />
+                </Box>
+             </group>
+           </group>
+         );
+      case 'mortar':
+         return (
+           <group scale={levelScale}>
+              <Cylinder args={[1.5, 1.6, 0.5, 16]} position={[0, 0.25, 0]}>
+                 <meshStandardMaterial color="#263238" />
+              </Cylinder>
+              <group rotation={[Math.PI / 4, 0, 0]}>
+                 <Cylinder args={[0.6, 0.6, 2, 16]} position={[0, 1, 0]}>
+                    <meshStandardMaterial color="#37474f" />
+                 </Cylinder>
+                 <Box args={[0.2, 1.8, 0.1]} position={[0, 1, 0.6]}>
+                    <meshStandardMaterial color="#c62828" />
+                 </Box>
+              </group>
+           </group>
+         );
+      case 'trap':
+         return (
+           <group scale={levelScale}>
+              <Box args={[0.8, 0.1, 0.8]} position={[0, 0.05, 0]}>
+                 <meshStandardMaterial 
+                   color="#455a64" 
+                   transparent={isEnemy} 
+                   opacity={isEnemy ? 0.2 : 0.8} 
+                 />
+              </Box>
+              <Sphere args={[0.3, 0.3, 0.3]} position={[0, 0.15, 0]}>
+                 <meshStandardMaterial color="#c62828" transparent={isEnemy} opacity={isEnemy ? 0.1 : 1} />
+              </Sphere>
+           </group>
+         );
+      case 'torch':
+         return (
+           <group scale={levelScale}>
+             {/* Main Pole - Low Poly */}
+             <Cylinder args={[0.04, 0.06, 2.0, 5]} position={[0, 1, 0]} castShadow>
+                <meshStandardMaterial color="#3d2b1f" roughness={1} />
+             </Cylinder>
+             
+             {/* Fire Visualization - Highly Optimized */}
+             <group position={[0, 2.1, 0]}>
+               <Float speed={8} rotationIntensity={0.1} floatIntensity={0.4}>
+                 {/* Single Core Flame */}
+                 <Sphere args={[0.12, 6, 6]} scale={[1, 1.4, 1]}>
+                    <meshStandardMaterial 
+                      color="#ff5722" 
+                      emissive="#ff5722" 
+                      emissiveIntensity={12} 
+                      toneMapped={false}
+                    />
+                 </Sphere>
+               </Float>
+
+               {/* Very Cheap Light - No Shadows */}
+               <pointLight 
+                 color="#ff8f00" 
+                 intensity={15 * (1 + (level - 1) * 0.5)} 
+                 distance={8 + level * 2} 
+                 decay={1.5}
+               />
+             </group>
+           </group>
+         );
       default:
         return <Box args={[1, 1, 1]}><meshStandardMaterial color="magenta" /></Box>;
     }
-  }, [type, level, progress]);
+  }, [type, level]); // Progress removed from dependency array
+
+  const constructionModel = React.useMemo(() => {
+    if (progress >= 1) return null;
+    
+    // Scaffolding and phase updates using scale/position to avoid geometry disposal
+    const frameHeight = 1.5;
+    const progressFactor = Math.min(1, Math.max(0, (progress - 0.33) / 0.67));
+
+    return (
+      <group>
+        {/* Foundation Phase (0 - 0.33) */}
+        <Box args={[1.6, 0.1, 1.6]} position={[0, 0.05, 0]}>
+          <meshStandardMaterial color="#555555" />
+        </Box>
+        
+        {/* Framework Phase (0.33 - 1.0) */}
+        {progress > 0.33 && (
+          <group>
+            {[
+              [0.7, 0.7], [-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7]
+            ].map(([px, pz], idx) => (
+              <Box 
+                key={idx}
+                args={[0.1, frameHeight, 0.1]} 
+                position={[px, (frameHeight * progressFactor) / 2, pz]}
+                scale={[1, progressFactor, 1]}
+              >
+                <meshStandardMaterial color="#8b4513" />
+              </Box>
+            ))}
+          </group>
+        )}
+
+        {/* Scaffolding Wrap */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.7, 0]}>
+           <boxGeometry args={[1.7, 1.7, 1.4]} />
+           <meshStandardMaterial color="#8b4513" wireframe />
+        </mesh>
+      </group>
+    );
+  }, [progress]);
+
+  const model = isConstructing ? constructionModel : finalModel;
 
   return (
-    <group 
+    <motion.group 
       position={[position[0], 0, position[1]]} 
       rotation={[0, rotation, 0]} 
+      initial={{ scale: 0, y: 8, rotateY: rotation + 0.5 }}
+      animate={{ scale: 1, y: 0, rotateY: rotation }}
+      transition={{ 
+        type: "spring",
+        stiffness: 400,
+        damping: 15,
+        mass: 0.8
+      }}
       onClick={handleClick}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
     >
-      <group position={[0, 0.01, 0]}>
+      <motion.group 
+        position={[0, 0.01, 0]}
+        animate={{
+          scale: (isSelected || hovered) ? 1.05 : 1
+        }}
+        transition={springTransition}
+      >
         {model}
-      </group>
+      </motion.group>
       
       {!isConstructing && showLabels && (
         <Html position={[0, 3 + (level * 0.1), 0]} center>
@@ -337,6 +444,6 @@ export function Building({ id, typeId, level, position, rotation, progress, isSe
            </div>
         </Html>
       )}
-    </group>
+    </motion.group>
   );
 }

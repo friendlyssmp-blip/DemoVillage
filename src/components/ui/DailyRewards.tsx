@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import confetti from 'canvas-confetti';
 import { 
   Gift, CheckCircle2, Star, Timer, 
   Package, Coins, Pickaxe, Trees, Apple, X
@@ -12,8 +13,12 @@ import {
 import { useShallow } from 'zustand/react/shallow';
 import { useGameStore } from '../../store/useGameStore';
 import { audioService } from '../../services/audioService';
+import { 
+  tapAnimation, springTransition, glowPulse 
+} from '../../lib/animations';
 
 export function DailyRewards() {
+// ...
   const [isOpen, setIsOpen] = useState(false);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const { lastDailyClaim, dailyRewardStreak, addResource, resources } = useGameStore(useShallow(s => ({
@@ -126,17 +131,42 @@ export function DailyRewards() {
                   return (
                     <motion.button 
                       key={day}
-                      onClick={isCurrent && canClaim ? handleClaim : undefined}
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: isCurrent ? 1.1 : 1, opacity: 1 }}
+                      transition={{ ...springTransition, delay: idx * 0.05 }}
+                      onClick={isCurrent && canClaim ? (e) => {
+                        handleClaim();
+                        confetti({
+                          particleCount: 40,
+                          spread: 70,
+                          origin: { y: e.clientY / window.innerHeight, x: e.clientX / window.innerWidth }
+                        });
+                      } : undefined}
                       whileHover={isCurrent && canClaim ? { scale: 1.15 } : {}}
                       whileTap={isCurrent && canClaim ? { scale: 0.95 } : {}}
                       className={`relative p-4 h-32 rounded-3xl border flex flex-col items-center justify-center gap-2 transition-all ${
                         isCurrent 
-                          ? 'bg-amber-500 border-amber-400 text-black scale-110 z-10 shadow-2xl shadow-amber-500/20 cursor-pointer' 
+                          ? 'bg-amber-500 border-amber-400 text-black z-10 shadow-2xl shadow-amber-500/20 cursor-pointer' 
                           : isClaimed 
                             ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-500 opacity-60' 
                             : 'bg-white/5 border-white/5 text-white/20 shadow-inner'
                       }`}
                     >
+                      {isCurrent && canClaim && (
+                        <>
+                          <motion.div 
+                            className="absolute inset-0 rounded-3xl border-2 border-white/50"
+                            animate={{ scale: [1, 1.05, 1], opacity: [0.5, 0, 0.5] }}
+                            transition={{ duration: 2, repeat: Infinity, type: 'tween' }}
+                          />
+                          {/* Glow Sweep */}
+                          <motion.div 
+                            className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/30 to-transparent -skew-x-12 z-20 pointer-events-none"
+                            animate={{ x: ['-100%', '200%'] }}
+                            transition={{ duration: 1.5, repeat: Infinity, ease: "linear", repeatDelay: 1 }}
+                          />
+                        </>
+                      )}
                       <span className="text-[10px] font-black uppercase">Day {day}</span>
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-black/10">
                         {day === 7 ? <Package size={24} /> : day === 3 || day === 5 ? <Apple size={20} /> : <Coins size={20} />}

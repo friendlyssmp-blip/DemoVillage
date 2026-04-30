@@ -31,8 +31,13 @@ export function ChatOverlay() {
 
     if (activeTab === 'global') {
       await chatService.sendGlobalMessage(message.trim(), playerName);
+    } else if (activeTab === 'clan') {
+      if (user.profile?.clanId) {
+        await chatService.sendClanMessage(user.profile.clanId, message.trim(), playerName);
+      } else {
+        alert('You must be in a clan to send clan messages');
+      }
     }
-    // Clan chat implementation would go here
     
     setMessage('');
   };

@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 0. GLOBAL SAFETY NET
+    // --- GLOBAL SAFETY NET ---
     match /{document=**} {
       allow read, write: if false;
     }
@@ -12,24 +12,16 @@ service cloud.firestore {
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
-    function isValidId(id) { 
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
-    }
-    function isClanLeader(clanId) {
-      return isSignedIn() && get(/databases/$(database)/documents/clans/$(clanId)).data.leaderId == request.auth.uid;
-    }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
 
     // --- ENTITY VALIDATION BLUEPRINTS ---
-
     function isValidVillage(data) {
-      // Strict key checks to prevent shadow fields
-      return data.keys().hasAll(['userId', 'buildings', 'resources', 'era', 'npcsCount'])
+      return data.keys().hasAll(['userId', 'buildings', 'resources', 'era', 'npcsCount', 'lastSynced'])
           && data.userId == request.auth.uid
           && data.buildings is list
           && data.resources is map
-          && data.era is string && data.era.size() <= 32
-          && data.npcsCount is number
-          && (!data.keys().contains('rankedPoints') || data.rankedPoints is number);
+          && data.era is string
+          && data.lastSynced == request.time;
     }
 
     function isValidProfile(data) {
@@ -47,29 +39,25 @@ service cloud.firestore {
 
     match /villages/{villageId} {
       allow get: if isSignedIn();
-      // Allow list for leaderboard: must query by rankedPoints
-      allow list: if isSignedIn(); 
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid; // Secure list query
       allow create: if isOwner(villageId) && isValidVillage(incoming());
       allow update: if isOwner(villageId) && isValidVillage(incoming())
                    && incoming().userId == existing().userId; // Immutable userId
     }
 
     match /profiles/{userId} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn();
+      allow list: if isSignedIn(); // Search allowed but limited by query in code
       allow create: if isOwner(userId) && isValidProfile(incoming());
-      allow update: if isOwner(userId) || (
-        isSignedIn() 
-        && incoming().diff(existing()).affectedKeys().hasOnly(['clanId', 'clanName'])
-        && existing().clanId != null && isClanLeader(existing().clanId)
-      );
+      allow update: if isOwner(userId) && isValidProfile(incoming())
+                   && !incoming().diff(existing()).affectedKeys().hasAny(['roles', 'isAdmin']); // Protect roles
     }
 
     match /usernames/{username} {
       allow get: if true;
-      allow write: if isSignedIn() 
-                   && isValidId(username)
-                   && incoming().uid == request.auth.uid
-                   && (resource == null || existing().uid == request.auth.uid);
+      allow write: if isOwner(incoming().uid) 
+                   && (resource == null || existing().uid == request.auth.uid)
+                   && isValidId(username);
     }
 
     match /clans/{clanId} {
@@ -77,20 +65,17 @@ service cloud.firestore {
       allow create: if isSignedIn() && incoming().leaderId == request.auth.uid;
       allow update: if isSignedIn() && (
         isOwner(existing().leaderId) || 
-        isJoinClanAction() ||
-        (isOwner(existing().leaderId) && incoming().memberCount == existing().memberCount - 1)
+        isJoinClanAction()
       );
     }
 
     match /clans/{clanId}/members/{userId} {
       allow read: if isSignedIn();
-      allow write: if isOwner(userId) || isClanLeader(clanId);
+      allow write: if isOwner(userId);
     }
 
     match /clans/{clanId}/messages/{msgId} {
-      allow read: if isSignedIn() && (
-        exists(/databases/$(database)/documents/clans/$(clanId)/members/$(request.auth.uid))
-      );
+      allow read: if isSignedIn() && exists(/databases/$(database)/documents/clans/$(clanId)/members/$(request.auth.uid));
       allow create: if isSignedIn() 
         && incoming().senderId == request.auth.uid
         && exists(/databases/$(database)/documents/clans/$(clanId)/members/$(request.auth.uid))
@@ -101,7 +86,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() 
         && incoming().senderId == request.auth.uid
-        && incoming().timestamp <= request.time.toMillis();
+        && incoming().timestamp <= request.time.toMillis(); // Changed == to <= for client tolerance
     }
 
     match /users/{userId}/dailyRewards/{document} {
@@ -112,15 +97,13 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if isSignedIn() && incoming().fromId == request.auth.uid;
       allow update: if isOwner(userId) && incoming().status in ['accepted', 'declined'];
-      allow delete: if isOwner(userId) || (
-        isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/users/$(userId)/friendRequests/$(reqId)).data.fromId
-      );
+      allow delete: if isOwner(userId) || (isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/users/$(userId)/friendRequests/$(reqId)).data.fromId);
     }
 
     match /users/{userId}/friends/{friendId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) || isOwner(friendId);
-      allow delete: if isOwner(userId) || isOwner(friendId);
+      allow create, delete: if isOwner(userId) || isOwner(friendId); 
     }
+
   }
 }

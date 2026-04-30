@@ -74,6 +74,25 @@ export const clanService = {
     await batch.commit();
   },
 
+  async promoteMember(clanId: string, memberId: string, role: string) {
+    await updateDoc(doc(db, `clans/${clanId}/members`, memberId), {
+      role
+    });
+  },
+
+  async kickMember(clanId: string, memberId: string) {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, `clans/${clanId}/members`, memberId));
+    batch.update(doc(db, 'clans', clanId), {
+      memberCount: increment(-1)
+    });
+    batch.update(doc(db, 'profiles', memberId), {
+      clanId: null,
+      clanName: null
+    });
+    await batch.commit();
+  },
+
   async leaveClan(clanId: string) {
     const user = auth.currentUser;
     if (!user) return;

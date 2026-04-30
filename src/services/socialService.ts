@@ -115,5 +115,31 @@ export const chatService = {
       const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage)).reverse();
       callback(msgs);
     }, onError);
+  },
+
+  async sendClanMessage(clanId: string, text: string, senderName: string) {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const msgId = Date.now().toString();
+    await setDoc(doc(db, `clans/${clanId}/messages`, msgId), {
+      senderId: user.uid,
+      senderName,
+      text,
+      timestamp: Date.now(),
+      type: 'clan'
+    });
+  },
+
+  subscribeToClanChat(clanId: string, callback: (messages: ChatMessage[]) => void, onError?: (error: any) => void) {
+    const q = query(
+      collection(db, `clans/${clanId}/messages`),
+      orderBy('timestamp', 'desc'),
+      limit(50)
+    );
+    return onSnapshot(q, (snap) => {
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage)).reverse();
+      callback(msgs);
+    }, onError);
   }
 };

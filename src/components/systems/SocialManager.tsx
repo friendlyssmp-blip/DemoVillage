@@ -4,11 +4,12 @@
  */
 
 import { useEffect } from 'react';
-import { onSnapshot, doc } from 'firebase/firestore';
+import { onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { useShallow } from 'zustand/react/shallow';
 import { auth, db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useGameStore } from '../../store/useGameStore';
 import { socialService, chatService } from '../../services/socialService';
+import { clanService } from '../../services/clanService';
 
 export function SocialManager() {
   const { user, setUser } = useGameStore(useShallow(s => ({
@@ -44,6 +45,28 @@ export function SocialManager() {
                handleFirestoreError(error, OperationType.GET, clanPath);
              }
            });
+
+           // Subscribe to Clan Members
+           const unsubMembers = clanService.subscribeToClanMembers(profile.clanId, (clanMembers) => {
+              const fetchMemberProfiles = async () => {
+                const membersWithProfiles = await Promise.all(clanMembers.map(async (m) => {
+                   try {
+                     const pSnap = await getDoc(doc(db, 'profiles', m.uid));
+                     return { ...m, ...pSnap.data() };
+                   } catch (e) {
+                     return m;
+                   }
+                }));
+                useGameStore.setState({ clanMembers: membersWithProfiles });
+              };
+              fetchMemberProfiles();
+           });
+
+           const baseUnsubClan = unsubClan;
+           unsubClan = () => {
+             baseUnsubClan?.();
+             unsubMembers();
+           };
         } else {
            if (unsubClan) unsubClan();
            unsubClan = null;
@@ -86,14 +109,27 @@ export function SocialManager() {
       }
     });
 
+    let unsubClanChat: (() => void) | null = null;
+    if (user.profile?.clanId) {
+       const clanChatPath = `clans/${user.profile.clanId}/messages`;
+       unsubClanChat = chatService.subscribeToClanChat(user.profile.clanId, (clanChat) => {
+         useGameStore.setState({ clanChat });
+       }, (error) => {
+         if (auth.currentUser) {
+           handleFirestoreError(error, OperationType.LIST, clanChatPath);
+         }
+       });
+    }
+
     return () => {
       unsubProfile();
       if (unsubClan) unsubClan();
       unsubFriends();
       unsubReqs();
       unsubChat();
+      if (unsubClanChat) unsubClanChat();
     };
-  }, [user.uid]);
+  }, [user.uid, user.profile?.clanId]);
 
   return null;
 }

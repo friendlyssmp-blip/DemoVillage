@@ -20,27 +20,50 @@ export function Worker({ position, isWorking, role }: WorkerProps) {
   const armsRef = useRef<THREE.Group>(null);
   const { cameraPosition } = useGameStore();
 
+  const lastPos = useRef(new THREE.Vector3().copy(position));
+  const walkingAlpha = useRef(0);
+
   useFrame((state) => {
     if (!meshRef.current) return;
     
     // Performance optimization: Entity Culling
-    // Check distance to camera
     const dx = position.x - state.camera.position.x;
     const dy = position.y - state.camera.position.y;
     const dz = position.z - state.camera.position.z;
     const distSq = dx*dx + dy*dy + dz*dz;
-    
-    // If very far, stop simulation (frustum culling handles render, but we stop animations here)
-    if (distSq > 2500) return; // 50 units away
+    if (distSq > 2500) return; 
 
     const t = state.clock.getElapsedTime();
 
+    // Walking detection
+    const moveDist = position.distanceTo(lastPos.current);
+    const isWalking = moveDist > 0.001;
+    walkingAlpha.current = THREE.MathUtils.lerp(walkingAlpha.current, isWalking ? 1 : 0, 0.1);
+    lastPos.current.copy(position);
+
     if (isWorking) {
       if (armsRef.current) {
-        armsRef.current.rotation.x = Math.sin(t * 8) * 0.4 - 0.2;
+        armsRef.current.rotation.x = Math.sin(t * 12) * 0.6 - 0.4;
       }
+      meshRef.current.rotation.z = Math.sin(t * 12) * 0.08;
+      // Working bounce
+      meshRef.current.position.y = (position.y + 0.01) + Math.abs(Math.sin(t * 12)) * 0.02;
     } else {
-      meshRef.current.position.y = Math.sin(t * 2) * 0.02;
+      // Breathing / Idle (Slower and more natural)
+      const breathing = Math.sin(t * 1.5) * 0.015;
+      meshRef.current.scale.set(1 + breathing, 1 + breathing, 1 + breathing);
+      
+      if (isWalking) {
+        const walkFreq = 14;
+        meshRef.current.rotation.x = (Math.sin(t * walkFreq) * 0.1) + 0.1; // Lean forward + bob
+        meshRef.current.rotation.z = Math.sin(t * walkFreq * 0.5) * 0.08; // Side wobble
+        // Walk bounce
+        meshRef.current.position.y = (position.y + 0.01) + Math.abs(Math.sin(t * walkFreq)) * 0.08;
+      } else {
+        meshRef.current.rotation.x = THREE.MathUtils.lerp(meshRef.current.rotation.x, 0, 0.1);
+        meshRef.current.rotation.z = THREE.MathUtils.lerp(meshRef.current.rotation.z, 0, 0.1);
+        meshRef.current.position.y = THREE.MathUtils.lerp(meshRef.current.position.y, position.y + 0.01, 0.1);
+      }
     }
   });
 

@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { useGameStore } from '../../store/useGameStore';
 
 export function InstancedWorkers() {
-  const npcs = useGameStore(state => state.npcs);
+  const npcs = useGameStore(state => state.npcs || []);
   const visibleChunks = useGameStore(state => state.visibleChunks);
   const movingBuildingId = useGameStore(state => state.movingBuildingId);
   const CHUNK_SIZE = 40;
@@ -17,7 +17,7 @@ export function InstancedWorkers() {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const headMeshRef = useRef<THREE.InstancedMesh>(null);
 
-  const culledNpcs = useMemo(() => npcs.filter(n => {
+  const culledNpcs = useMemo(() => (npcs || []).filter(n => {
     if (n.buildingId === movingBuildingId) return false;
     const cx = Math.floor(n.position[0] / CHUNK_SIZE);
     const cz = Math.floor(n.position[2] / CHUNK_SIZE);

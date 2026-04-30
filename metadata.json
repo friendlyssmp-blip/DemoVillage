@@ -1,6 +1,6 @@
 {
-  "name": "Village Tycoon: Builder & Automation",
-  "description": "A 3D mobile strategy game where you build and grow your village. Includes clans, social features, global chat, and a competitive leaderboard.",
+  "name": "DemoVillage",
+  "description": "A tactical 3D mobile strategy game with deterministic battle replays, daily rotating shop, and specialized buildings like the Laboratory and Ancient Forge for troop upgrades.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

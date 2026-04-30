@@ -14,6 +14,7 @@ import { Unit } from './Unit';
 import { MapObjects } from './MapObjects';
 import { BuildingPlacement } from './BuildingPlacement';
 import { InstancedWorkers } from './InstancedWorkers';
+import { ParticleSystem } from '../effects/ParticleSystem';
 import * as THREE from 'three';
 
 function WeatherEffects() {
@@ -23,8 +24,8 @@ function WeatherEffects() {
     <group>
       {weather === 'rainy' && (
          <Float speed={10} rotationIntensity={0} floatIntensity={0}>
-            {Array.from({ length: 50 }).map((_, i) => (
-              <mesh key={i} position={[Math.random() * 40 - 20, Math.random() * 10 + 5, Math.random() * 40 - 20]}>
+            {Array.from({ length: 150 }).map((_, i) => (
+              <mesh key={i} position={[Math.random() * 80 - 40, Math.random() * 20 + 10, Math.random() * 80 - 40]}>
                 <boxGeometry args={[0.02, 0.5, 0.02]} />
                 <meshStandardMaterial color="#88ccff" transparent opacity={0.4} />
               </mesh>
@@ -32,9 +33,9 @@ function WeatherEffects() {
          </Float>
       )}
       {weather === 'snowy' && (
-         <Float speed={2} rotationIntensity={2} floatIntensity={2}>
-            {Array.from({ length: 100 }).map((_, i) => (
-              <mesh key={i} position={[Math.random() * 40 - 20, Math.random() * 10 + 5, Math.random() * 40 - 20]}>
+         <Float speed={2} rotationIntensity={5} floatIntensity={5}>
+            {Array.from({ length: 200 }).map((_, i) => (
+              <mesh key={i} position={[Math.random() * 80 - 40, Math.random() * 20 + 10, Math.random() * 80 - 40]}>
                 <sphereGeometry args={[0.05, 4, 4]} />
                 <meshStandardMaterial color="white" />
               </mesh>
@@ -43,7 +44,7 @@ function WeatherEffects() {
       )}
       {weather === 'stormy' && (
         <Float speed={20} floatIntensity={0} rotationIntensity={0}>
-           <pointLight intensity={Math.random() > 0.95 ? 100 : 0} position={[Math.random() * 20 - 10, 10, Math.random() * 20 - 10]} color="#ffffff" />
+           <pointLight intensity={Math.random() > 0.98 ? 500 : 0} position={[Math.random() * 40 - 20, 20, Math.random() * 40 - 20]} color="#ffffff" />
         </Float>
       )}
     </group>
@@ -55,28 +56,34 @@ function GlobalLighting() {
   const weather = useGameStore(state => state.weather);
   const { scene } = useThree();
 
-  // Smoothing lighting transitions
+  // Balanced lighting for all times
   const isNight = timeOfDay < 5 || timeOfDay > 19;
-  const sunIntensity = isNight ? 0.2 : timeOfDay < 7 || timeOfDay > 17 ? 0.6 : 1.2;
+  const sunIntensity = isNight ? 0.55 : timeOfDay < 7 || timeOfDay > 17 ? 0.8 : 1.6;
   
   const angle = (timeOfDay / 24) * Math.PI * 2;
   const sunPosition: [number, number, number] = [
-    Math.cos(angle) * 50,
-    Math.sin(angle) * 50,
-    10
+    Math.cos(angle) * 80,
+    Math.sin(angle) * 80,
+    20
   ];
 
-  const skyColor = new THREE.Color();
-  if (timeOfDay < 5 || timeOfDay > 20) skyColor.set('#050510');
-  else if (timeOfDay < 7) skyColor.lerpColors(new THREE.Color('#050510'), new THREE.Color('#ff7733'), (timeOfDay - 5) / 2);
-  else if (timeOfDay < 17) skyColor.set('#87ceeb');
-  else skyColor.lerpColors(new THREE.Color('#87ceeb'), new THREE.Color('#ff3300'), (timeOfDay - 17) / 3);
-
   useEffect(() => {
+    const skyColor = new THREE.Color();
+    if (timeOfDay < 5 || timeOfDay > 20) skyColor.set('#1a1a35'); // Night: Lighter blue-grey for better visibility
+    else if (timeOfDay < 7) skyColor.lerpColors(new THREE.Color('#1a1a35'), new THREE.Color('#ff9933'), (timeOfDay - 5) / 2); // Dawn
+    else if (timeOfDay < 17) skyColor.set('#87ceeb'); // Day
+    else skyColor.lerpColors(new THREE.Color('#87ceeb'), new THREE.Color('#ff5500'), (timeOfDay - 17) / 3); // Dusk
+
     scene.background = skyColor;
-    const fogColor = skyColor.clone().multiplyScalar(0.8);
-    scene.fog = new THREE.FogExp2(fogColor.getHex(), 0.015);
-  }, [timeOfDay, weather, scene]);
+    
+    // Dynamic Fog
+    const fogColor = skyColor.clone().multiplyScalar(0.7);
+    let fogDensity = 0.01;
+    if (isNight) fogDensity = 0.025; // Thicker at night
+    else if (timeOfDay < 7 || timeOfDay > 17) fogDensity = 0.018; // Medium at dawn/dusk
+    
+    scene.fog = new THREE.FogExp2(fogColor.getHex(), fogDensity);
+  }, [timeOfDay, weather, scene, isNight]);
 
   return (
     <>
@@ -88,29 +95,50 @@ function GlobalLighting() {
         mieCoefficient={weather === 'stormy' ? 0.1 : 0.005}
         turbidity={weather === 'stormy' ? 20 : 0.1}
       />
-      {isNight && <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />}
+      {isNight && <Stars radius={100} depth={50} count={3000} factor={4} saturation={0} fade speed={1} />}
       
-      <ambientLight intensity={isNight ? 0.2 : 0.5} />
+      <ambientLight intensity={isNight ? 0.45 : 0.6} color={isNight ? "#bbbaff" : "#ffffff"} />
       <directionalLight
         position={sunPosition}
         intensity={sunIntensity}
         castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-40}
-        shadow-camera-right={40}
-        shadow-camera-top={40}
-        shadow-camera-bottom={-40}
+        shadow-mapSize={[1024, 1024]}
+        shadow-camera-left={-60}
+        shadow-camera-right={60}
+        shadow-camera-top={60}
+        shadow-camera-bottom={-60}
       />
       
       {isNight && (
         <directionalLight 
           position={[-sunPosition[0], sunPosition[1], -sunPosition[2]]} 
-          intensity={0.15} 
+          intensity={0.2} 
           color="#aaaaff" 
         />
       )}
     </>
   );
+}
+
+function EffectsLayer() {
+    const notifications = useGameStore(state => state.resourceNotifications);
+    
+    return (
+        <group>
+            {notifications.map(n => (
+                <ParticleSystem 
+                    key={n.id} 
+                    active={true} 
+                    position={[
+                        (Math.random() - 0.5) * 10,
+                        2,
+                        (Math.random() - 0.5) * 10
+                    ]} 
+                    color={n.type === 'wood' ? '#8b4513' : n.type === 'stone' ? '#808080' : n.type === 'gold' ? '#ffd700' : '#44ff44'}
+                />
+            ))}
+        </group>
+    );
 }
 
 function ZonesVisualizer() {
@@ -141,10 +169,10 @@ function ZonesVisualizer() {
   );
 }
 
-function CameraController({ onUpdate }: { onUpdate: (pos: [number, number, number]) => void }) {
+function CameraController({ onCameraUpdate }: { onCameraUpdate: (pos: [number, number, number]) => void }) {
   const { camera } = useThree();
   useFrame(() => {
-    onUpdate([camera.position.x, camera.position.y, camera.position.z]);
+    onCameraUpdate([camera.position.x, camera.position.y, camera.position.z]);
   });
   return null;
 }
@@ -153,7 +181,7 @@ export function GameViewport({ menuMode = false, combatMode = false }: { menuMod
   const state = useGameStore(useShallow(s => ({
     buildings: s.buildings,
     enemyBuildings: s.enemyBuildings,
-    npcs: s.npcs,
+    npcs: s.npcs || [],
     selectedBuildingId: s.selectedBuildingId,
     tick: s.tick,
     movingBuildingId: s.movingBuildingId,
@@ -194,7 +222,7 @@ export function GameViewport({ menuMode = false, combatMode = false }: { menuMod
     return visibleChunks.includes(`${cx},${cz}`);
   }), [activeBuildings, visibleChunks, combatMode]);
 
-  const culledNpcs = React.useMemo(() => npcs.filter(n => {
+  const culledNpcs = React.useMemo(() => (npcs || []).filter(n => {
     if (n.buildingId === movingBuildingId) return false;
     // Cull NPCs by chunk
     const cx = Math.floor(n.position[0] / CHUNK_SIZE);
@@ -210,7 +238,7 @@ export function GameViewport({ menuMode = false, combatMode = false }: { menuMod
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
       >
         <Suspense fallback={null}>
-          <CameraController onUpdate={updateCamera} />
+          <CameraController onCameraUpdate={updateCamera} />
           <InteractionManager />
           <GlobalLighting />
           {(menuMode || combatStatus === 'searching') && <MenuCameraControls />}
@@ -220,6 +248,7 @@ export function GameViewport({ menuMode = false, combatMode = false }: { menuMod
           <MapObjects />
           <ZonesVisualizer />
           <BuildingPlacement />
+          <EffectsLayer />
 
           {culledBuildings.map((b) => (
             <group key={b.id}>
@@ -296,7 +325,7 @@ function MovingBuilding({ building }: { building: any }) {
   const point = new THREE.Vector3();
   const checkPlacement = useGameStore(state => state.checkPlacement);
   const buildings = useGameStore(state => state.buildings);
-  const npcs = useGameStore(state => state.npcs);
+  const npcs = useGameStore(state => state.npcs || []);
 
   useFrame(() => {
     raycaster.setFromCamera(mouse, camera);

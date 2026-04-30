@@ -11,12 +11,16 @@ import {
   CloudLightning, Wind, Snowflake, Briefcase, Coffee, 
   Pause, Settings, ChevronRight, BookOpen, ScrollText, 
   Lock, Globe, AlertTriangle, Zap, TrendingUp,
-  LogIn, LogOut, Cloud
+  LogIn, LogOut, Cloud, Crown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { 
+  tapAnimation, springTransition, menuTransition, floatUpAnimation 
+} from '../../lib/animations';
 import { UpgradeModal } from './UpgradeModal';
 import { Tutorial } from './Tutorial';
 import { PauseMenu } from './PauseMenu';
+import { SeasonPanel } from './SeasonPanel';
 import { authService } from '../../services/authService';
 import { audioService } from '../../services/audioService';
 
@@ -37,7 +41,6 @@ export function HUD() {
     era: s.era,
     technologies: s.technologies,
     quests: s.quests,
-    activeEvents: s.activeEvents,
     unlockedZones: s.unlockedZones,
     unlockZone: s.unlockZone,
     startResearch: s.startResearch,
@@ -57,20 +60,58 @@ export function HUD() {
     combatStatus: s.combatStatus,
     rankedPoints: s.rankedPoints,
     rankTier: s.rankTier,
-    leaderboard: s.leaderboard
+    leaderboard: s.leaderboard,
+    resourceNotifications: s.resourceNotifications,
+    dailyMissions: s.dailyMissions,
+    activeLiveEvents: s.activeLiveEvents
   })));
 
   const { 
     resources, maxCapacity, population, weather, buildings, 
     isEditMode, toggleEditMode, selectedObjectId, mapObjects, removeMapObject,
     selectedBuildingId, upgradeBuilding, era, technologies, quests, 
-    activeEvents, unlockedZones, unlockZone, startResearch, villageName,
+    activeLiveEvents, unlockedZones, unlockZone, startResearch, villageName,
     user: storeUser, playerName, setPaused, isPaused,
     isResearchOpen, setResearchOpen, isQuestsOpen, setQuestsOpen, isZonesOpen, setZonesOpen,
-    viewMode, setViewMode, combatStatus, rankedPoints, rankTier, leaderboard
+    viewMode, setViewMode, combatStatus, rankedPoints, rankTier, leaderboard,
+    resourceNotifications, dailyMissions
   } = state;
 
+  const [isSeasonOpen, setSeasonOpen] = useState(false);
   const [isLeaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [floaters, setFloaters] = useState<{ id: string; text: string; color: string; x: number; y: number }[]>([]);
+  const lastResources = React.useRef(resources);
+
+    // Resource gain detection for floating text
+    React.useEffect(() => {
+        if (isPaused) return;
+        const diffs: { type: string; amount: number }[] = [];
+        const currentResources = resources;
+        const lastRes = lastResources.current;
+
+        Object.keys(currentResources).forEach(key => {
+            const resKey = key as keyof typeof currentResources;
+            const diff = currentResources[resKey] - lastRes[resKey];
+            if (diff >= 1) { 
+                diffs.push({ type: resKey, amount: Math.floor(diff) });
+            }
+        });
+
+        if (diffs.length > 0) {
+            const newFloaters = diffs.map((d, i) => ({
+                id: Math.random().toString(36).substr(2, 9),
+                text: `+${d.amount}`,
+                color: d.type === 'gold' ? 'text-amber-400' : d.type === 'food' ? 'text-emerald-400' : 'text-white',
+                x: 80 + (i * 40), 
+                y: 100 + Math.random() * 50
+            }));
+            setFloaters(prev => [...prev, ...newFloaters].slice(-20)); // Limit total floaters
+            setTimeout(() => {
+                setFloaters(prev => prev.filter(f => !newFloaters.find(nf => nf.id === f.id)));
+            }, 1000);
+        }
+        lastResources.current = resources;
+    }, [resources, isPaused]);
 
   const handleOpenPause = () => {
     audioService.play('open');
@@ -99,6 +140,27 @@ export function HUD() {
 
   return (
     <div className="fixed inset-0 pointer-events-none z-10 font-sans select-none">
+      <div className="absolute top-1/2 left-3 -translate-y-1/2 pointer-events-none overflow-visible z-50">
+        <AnimatePresence>
+          {resourceNotifications.map((n) => (
+            <motion.div
+              key={n.id}
+              initial={{ x: 20, y: 10, opacity: 0, scale: 0.5 }}
+              animate={{ x: 60, y: -40, opacity: 1, scale: 1.2 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+              className={`absolute font-black italic text-lg shadow-sm whitespace-nowrap ${
+                n.type === 'gold' ? 'text-amber-400' : 
+                n.type === 'wood' ? 'text-amber-100' : 
+                n.type === 'stone' ? 'text-slate-300' : 'text-emerald-400'
+              }`}
+            >
+              +{Math.floor(n.amount)}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
       <UpgradeModal />
       <Tutorial />
       <PauseMenu isOpen={isPaused} onClose={() => setPaused(false)} />
@@ -116,7 +178,7 @@ export function HUD() {
             <div className="flex gap-1.5 max-md:gap-1">
               <motion.div 
                 animate={{ rotate: weather === 'windy' ? [0, 5, 0] : 0 }}
-                transition={{ duration: 2, repeat: Infinity }}
+                transition={{ duration: 2, repeat: Infinity, type: 'tween' }}
                 className="backdrop-blur-xl bg-black/40 border border-white/10 p-2 rounded-xl text-white pointer-events-auto flex items-center justify-center shadow-lg max-md:p-1.5"
               >
                  <WeatherIcon weather={weather} size={16} />
@@ -178,8 +240,9 @@ export function HUD() {
                 warning={resources.food < 50}
               />
               <motion.div 
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 0.15, type: 'tween' }}
+                key={resources.gold}
                 className="backdrop-blur-xl bg-amber-400/90 text-black px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-lg border border-yellow-300/50 pointer-events-auto"
               >
                 <div className="bg-black/10 p-0.5 rounded-lg">
@@ -187,7 +250,7 @@ export function HUD() {
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[6px] font-black uppercase tracking-widest opacity-60 leading-none mb-0.5">Gold</span>
-                  <span className="text-xs font-black tracking-tighter leading-none">{Math.floor(resources.gold).toLocaleString()}</span>
+                  <span className="text-xs font-black tracking-tighter leading-none">{formatValue(resources.gold)}</span>
                 </div>
               </motion.div>
             </div>
@@ -221,6 +284,7 @@ export function HUD() {
             >
                <button 
                  onClick={handleOpenPause}
+                 onPointerDown={() => audioService.play('open', { randomized: true })}
                  className="p-2.5 bg-black/40 border border-white/5 rounded-full text-white/40 hover:text-white hover:bg-black/60 transition-all backdrop-blur-md shadow-lg pointer-events-auto active:scale-90"
                >
                  <Pause size={14} fill="currentColor" />
@@ -244,7 +308,7 @@ export function HUD() {
                 exit={{ x: 100, opacity: 0 }}
                 className="flex flex-col items-end gap-1.5"
               >
-                {activeEvents.map((event, idx) => (
+                {activeLiveEvents.map((event, idx) => (
                   <motion.div 
                     key={event.id || `event-${idx}`}
                     initial={{ x: 20, opacity: 0 }}
@@ -265,9 +329,9 @@ export function HUD() {
                 <TabButton 
                   active={isQuestsOpen} 
                   onClick={() => {
-                    audioService.play('open');
                     setQuestsOpen(!isQuestsOpen);
                   }}
+                  onPointerDown={() => audioService.play('open', { randomized: true })}
                   icon={<ScrollText size={16} />}
                   label="Quests"
                   badge={quests.filter(q => !q.completed).length}
@@ -275,16 +339,15 @@ export function HUD() {
                 <TabButton 
                   active={isResearchOpen} 
                   onClick={() => {
-                    audioService.play('open');
                     setResearchOpen(!isResearchOpen);
                   }}
+                  onPointerDown={() => audioService.play('open', { randomized: true })}
                   icon={<BookOpen size={16} />}
                   label="Tech"
                 />
                 <TabButton 
                   active={viewMode === 'fighting'} 
                   onClick={() => {
-                    audioService.play('click');
                     if (!storeUser.uid) {
                        alert('Please login to play Multiplayer');
                        return;
@@ -296,6 +359,7 @@ export function HUD() {
                     if (viewMode === 'fighting') setViewMode('playing');
                     else setViewMode('fighting');
                   }}
+                  onPointerDown={() => audioService.play('click', { randomized: true })}
                   icon={<Zap size={16} />}
                   label="Multiplayer"
                 />
@@ -306,14 +370,32 @@ export function HUD() {
                     setLeaderboardOpen(next);
                     if (next) useGameStore.getState().fetchLeaderboard();
                   }}
+                  onPointerDown={() => audioService.play('secondary', { randomized: true })}
                   icon={<Globe size={16} />}
                   label="Leaderboard"
+                />
+                <TabButton 
+                  active={isSeasonOpen} 
+                  onClick={() => {
+                    setSeasonOpen(!isSeasonOpen);
+                  }}
+                  onPointerDown={() => audioService.play('open', { randomized: true })}
+                  icon={<Crown size={16} />}
+                  label="Season"
+                  badge={dailyMissions.filter(m => m.completed && !m.claimed).length}
                 />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </div>
+
+      {/* --- SEASON PANEL --- */}
+      <AnimatePresence>
+        {isSeasonOpen && (
+          <SeasonPanel onClose={() => setSeasonOpen(false)} />
+        )}
+      </AnimatePresence>
 
       {/* --- MATCHMAKING & COMBAT UI --- */}
       <AnimatePresence>
@@ -581,6 +663,12 @@ export function HUD() {
   );
 }
 
+function formatValue(value: number): string {
+  if (value >= 1000000) return (value / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (value >= 1000) return (value / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  return Math.floor(value).toString();
+}
+
 function ResourceItem({ icon, value, max, color, label, warning }: { icon: React.ReactNode, value: number, max: number, color: string, label: string, warning?: boolean }) {
   const percentage = Math.min((value / max) * 100, 100);
   
@@ -598,7 +686,6 @@ function ResourceItem({ icon, value, max, color, label, warning }: { icon: React
 
   return (
     <motion.div 
-      initial={{ x: -50, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       className={`backdrop-blur-xl ${bgIntensity} border pl-1.5 pr-2 py-1 rounded-xl flex items-center gap-1.5 text-white pointer-events-auto min-w-[100px] max-md:min-w-0 transition-all ${percentage > 95 ? 'animate-pulse' : ''}`}
     >
@@ -608,7 +695,7 @@ function ResourceItem({ icon, value, max, color, label, warning }: { icon: React
       <div className="flex flex-col w-full gap-0.5">
         <div className="flex justify-between items-end">
           <div className="flex items-baseline gap-1">
-            <span className="text-[10px] font-black italic tracking-tighter leading-none">{value.toLocaleString()}</span>
+            <span className="text-[10px] font-black italic tracking-tighter leading-none">{formatValue(value)}</span>
           </div>
         </div>
         <div className="w-full h-0.5 bg-white/5 rounded-full overflow-hidden">
@@ -623,10 +710,13 @@ function ResourceItem({ icon, value, max, color, label, warning }: { icon: React
   );
 }
 
-function TabButton({ active, onClick, icon, label, badge }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string, badge?: number }) {
+function TabButton({ active, onClick, onPointerDown, icon, label, badge }: { active: boolean, onClick: () => void, onPointerDown?: () => void, icon: React.ReactNode, label: string, badge?: number }) {
   return (
-    <button 
+    <motion.button 
       onClick={onClick}
+      onPointerDown={onPointerDown}
+      {...tapAnimation}
+      transition={springTransition}
       className={`backdrop-blur-xl border px-3 py-2 rounded-xl flex items-center gap-3 transition-all relative group shadow-md ${
         active ? 'bg-amber-400 text-black border-amber-300' : 'bg-black/60 text-white border-white/10 hover:border-white/20'
       }`}
@@ -640,16 +730,14 @@ function TabButton({ active, onClick, icon, label, badge }: { active: boolean, o
           {badge}
         </div>
       )}
-    </button>
+    </motion.button>
   );
 }
 
 function SidePanel({ title, children, onClose, side }: { title: string, children: React.ReactNode, onClose: () => void, side: 'left' | 'right' }) {
   return (
     <motion.div 
-      initial={{ x: side === 'left' ? -350 : 350, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{ x: side === 'left' ? -350 : 350, opacity: 0 }}
+      {...menuTransition}
       className={`fixed top-16 bottom-16 ${side === 'left' ? 'left-4' : 'right-12'} w-72 max-md:right-4 max-md:left-4 max-md:w-auto backdrop-blur-2xl bg-black/70 border border-white/10 rounded-[30px] shadow-2xl p-6 pointer-events-auto flex flex-col z-50`}
     >
       <div className="flex justify-between items-center mb-6">

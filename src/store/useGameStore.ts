@@ -4,13 +4,15 @@ import {
   GameState, BuildingInstance, ResourceType, Resources, 
   NPCInstance, WeatherType, BuildingType, MapObject,
   Technology, Quest, Zone, WorldEvent, ViewMode, LeaderboardEntry, OfflineSummary,
-  UnitInstance, CombatStatus
+  UnitInstance, CombatStatus, DailyMission, LiveEvent,
+  TroopType, TroopStats, ShopItem, BattleReplay, Equipment, CraftingJob, DeploymentAction
 } from '../types';
 import { 
   doc, setDoc, getDoc, collection, query, where, getDocs, 
   limit, serverTimestamp, updateDoc, increment, arrayUnion, Timestamp
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
+import { audioService } from '../services/audioService';
 
 export const BUILDING_TYPES: Record<string, BuildingType> = {
   townhall: {
@@ -121,6 +123,18 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     requiredEra: 'primal',
     size: 2,
   },
+  goblin_hut: {
+    id: 'goblin_hut',
+    name: 'Goblin Hut',
+    description: 'Raids neighboring villages automatically for Gold bonus.',
+    cost: { wood: 300, gold: 500 },
+    production: { gold: 1.5 },
+    capacityBonus: { gold: 2000 },
+    model: 'goblin_hut' as const,
+    npcCount: 2,
+    requiredEra: 'colonial',
+    size: 2,
+  },
   academy: {
     id: 'academy',
     name: 'Royal Academy',
@@ -156,6 +170,101 @@ export const BUILDING_TYPES: Record<string, BuildingType> = {
     npcCount: 2,
     requiredEra: 'industrial',
     size: 2,
+  },
+  tower: {
+    id: 'tower',
+    name: 'Archer Tower',
+    description: 'Defends the village against invaders with long-range arrows.',
+    cost: { wood: 200, stone: 150, gold: 300 },
+    production: {},
+    capacityBonus: {},
+    model: 'tower' as const,
+    npcCount: 2,
+    requiredEra: 'colonial',
+    size: 2,
+  },
+  mortar: {
+    id: 'mortar',
+    name: 'Mortar',
+    description: 'Deals massive splash damage to slow moving units.',
+    cost: { wood: 400, stone: 600, gold: 500 },
+    production: {},
+    capacityBonus: {},
+    model: 'mortar' as const,
+    npcCount: 0,
+    requiredEra: 'industrial',
+    size: 2,
+  },
+  trap: {
+    id: 'trap',
+    name: 'Bomb Trap',
+    description: 'Explodes when units step on it. One-time use.',
+    cost: { wood: 100, stone: 100, gold: 200 },
+    production: {},
+    capacityBonus: {},
+    model: 'trap' as const,
+    npcCount: 0,
+    requiredEra: 'colonial',
+    size: 1,
+  },
+  torch: {
+    id: 'torch',
+    name: 'Village Torch',
+    description: 'Brings light to the darkness and boosts villager morale slightly.',
+    cost: { wood: 20, gold: 10 },
+    production: { gold: 0.05 },
+    capacityBonus: {},
+    model: 'torch' as const,
+    npcCount: 0,
+    requiredEra: 'primal',
+    size: 1,
+  }
+};
+
+export const TROOP_TYPES: Record<TroopType, TroopStats> = {
+  warrior: {
+    id: 'warrior',
+    name: 'Warrior',
+    health: 120,
+    damage: 15,
+    speed: 1.5,
+    range: 1.2,
+    cost: { food: 50 },
+    capacity: 1,
+    priority: 'any'
+  },
+  archer: {
+    id: 'archer',
+    name: 'Archer',
+    health: 70,
+    damage: 12,
+    speed: 1.2,
+    range: 8,
+    cost: { food: 40, wood: 10 },
+    capacity: 1,
+    priority: 'any'
+  },
+  tank: {
+    id: 'tank',
+    name: 'Tank',
+    health: 450,
+    damage: 8,
+    speed: 0.8,
+    range: 1.5,
+    cost: { food: 150, stone: 20 },
+    capacity: 4,
+    priority: 'defense'
+  },
+  scout: {
+    id: 'scout',
+    name: 'Scout',
+    health: 60,
+    damage: 10,
+    speed: 2.5,
+    range: 1.0,
+    cost: { food: 30, gold: 10 },
+    capacity: 1,
+    priority: 'resource'
   }
 };
 
@@ -242,16 +351,34 @@ interface GameStore extends GameState {
   setQuestsOpen: (open: boolean) => void;
   setZonesOpen: (open: boolean) => void;
   updateSettings: (settings: Partial<GameState['settings']>) => void;
+  isAnyMenuOpen: () => boolean;
   syncVillage: () => Promise<void>;
   saveProgress: () => Promise<void>;
   fetchLeaderboard: () => Promise<void>;
   updateCamera: (pos: [number, number, number]) => void;
   startMatchmaking: () => void;
   cancelMatchmaking: () => void;
-  deployUnit: (type: 'soldier' | 'archer' | 'heavy', position: [number, number]) => void;
-  setCombatUnit: (type: 'soldier' | 'archer' | 'heavy') => void;
+  deployUnit: (type: TroopType, position: [number, number]) => void;
+  trainTroop: (type: TroopType) => void;
+  setCombatUnit: (type: TroopType) => void;
   setUser: (user: Partial<GameState['user']>) => void;
   recalculateCapacity: () => void;
+  handleMissionProgress: (type: DailyMission['type'], target: string, amount: number) => void;
+  addSeasonXP: (amount: number) => void;
+  resetVillage: () => Promise<void>;
+
+  // New Systems Methods
+  tickShop: () => void;
+  buyShopItem: (item: ShopItem) => void;
+  
+  startReplay: (replay: BattleReplay) => void;
+  stopReplay: () => void;
+  
+  startCrafting: (equipment: Equipment) => void;
+  collectCraftedItem: (jobId: string) => void;
+  
+  researchLaboratory: (researchId: string) => void;
+  tradeMarket: (from: ResourceType, to: ResourceType, amount: number) => void;
 }
 
 const generateMapObjects = (count: number, gridSize: number) => {
@@ -302,10 +429,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
   mapObjects: generateMapObjects(60, 100),
   technologies: INITIAL_TECHS,
   quests: INITIAL_QUESTS,
-  activeEvents: [],
+  activeLiveEvents: [],
   unlockedZones: ['core'],
   era: 'primal',
   population: 0,
+  season: {
+    current: 1,
+    startTime: Date.now(),
+    endTime: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    name: 'Season 1: Pioneers'
+  },
+  seasonPass: {
+    level: 1,
+    xp: 0,
+    nextLevelXp: 1000,
+    isPremium: false,
+    claimedFree: [],
+    claimedPremium: []
+  },
+  dailyMissions: [],
   weather: 'sunny',
   timeOfDay: 12,
   selectedBuildingId: null,
@@ -326,6 +468,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isQuestsOpen: false,
   isZonesOpen: false,
   
+  // Tactical Battle System
+  army: { warrior: 10, archer: 5, tank: 0, scout: 0 },
+  troopTraining: [],
+  maxArmyCapacity: 20,
+  battleTimeLeft: 0,
+  destructionPercentage: 0,
+  lastDeploymentTime: 0,
+  battleStartTime: null,
+  
   // Infinite World
   cameraPosition: [25, 25, 25],
   visibleChunks: [],
@@ -341,7 +492,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     soundVolume: 0.8,
     graphicsQuality: 'high',
     sensitivity: 1.0,
-    uiScale: 1.0
+    uiScale: 0.85 // Reduced by 15% for cleaner mobile feel
+  },
+
+  isAnyMenuOpen: () => {
+    const { isPaused, isResearchOpen, isQuestsOpen, isZonesOpen, viewMode, tutorialStep, selectedBuildingId, selectedObjectId } = get();
+    // Also consider build menu/selection as "menu open" if it obscures view
+    return isPaused || isResearchOpen || isQuestsOpen || isZonesOpen || viewMode !== 'playing' || (tutorialStep > 0 && tutorialStep < 10) || !!selectedBuildingId || !!selectedObjectId;
   },
   playerName: 'Chief Village',
   villageName: 'The Sanctuary',
@@ -353,11 +510,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   units: [],
   enemyBuildings: [],
   combatStatus: 'idle',
-  selectedCombatUnit: 'soldier',
+  selectedCombatUnit: 'warrior',
 
   // Social & Multiplayer
   clans: [],
   activeClan: null,
+  clanMembers: [],
   friends: [],
   friendRequests: [],
   globalChat: [],
@@ -366,30 +524,66 @@ export const useGameStore = create<GameStore>((set, get) => ({
   lastDailyClaim: 0,
   tickCount: 0,
   lastUpdate: Date.now(),
+  resourceNotifications: [],
+  
+  // Replay System
+  replays: [],
+  isReplaying: false,
+  activeReplay: null,
+  replayTime: 0,
+  replaySpeed: 1,
+  recordedActions: [],
+
+  // Daily Shop
+  dailyShop: {
+    items: [],
+    lastReset: 0
+  },
+
+  // Equipment & Crafting
+  inventory: [],
+  craftingQueue: [],
+  researchLevels: {},
 
   startMatchmaking: async () => {
+    const startTime = Date.now();
     set({ 
        combatStatus: 'searching', 
        viewMode: 'fighting', 
        units: [], 
-       selectedCombatUnit: 'soldier',
-       matchmakingQueueStartTime: Date.now() 
+       battleTimeLeft: 180, // 3 minutes
+       destructionPercentage: 0,
+       matchmakingQueueStartTime: startTime,
+       recordedActions: []
     });
 
+    // Check for matchmaking timeout (30 seconds)
+    const timeoutCheck = setInterval(() => {
+       const { combatStatus, matchmakingQueueStartTime } = get();
+       if (combatStatus !== 'searching') {
+          clearInterval(timeoutCheck);
+          return;
+       }
+       if (matchmakingQueueStartTime && Date.now() - matchmakingQueueStartTime > 30000) {
+          clearInterval(timeoutCheck);
+          set({ combatStatus: 'idle', viewMode: 'playing', matchmakingQueueStartTime: null });
+          alert('No opponent found, try again later.');
+       }
+    }, 1000);
+
     try {
-      const { user, buildings, npcs } = get();
+      const { user, buildings, npcs: rawNpcs } = get();
+      const npcs = rawNpcs || [];
       const currentPower = buildings.length * 100 + buildings.reduce((sum, b) => sum + b.level, 0) * 50 + npcs.length * 10;
       
-      // Real competitive matchmaking: Find players within a power score range
-      // and who have been active recently.
       const playersRef = collection(db, 'villages');
-      const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const yesterdayDate = new Date(Date.now() - 48 * 60 * 60 * 1000); // 48h active
       const yesterday = Timestamp.fromDate(yesterdayDate);
       
       const q = query(
         playersRef, 
         where('lastSynced', '>=', yesterday),
-        limit(100)
+        limit(50)
       );
       
       const querySnapshot = await getDocs(q);
@@ -397,38 +591,42 @@ export const useGameStore = create<GameStore>((set, get) => ({
         .filter(doc => doc.id !== user.uid)
         .map(doc => ({ id: doc.id, ...(doc.data() as any) }))
         .filter(p => {
-          // Allow +/- 30% power score variance for a match
           const diff = Math.abs(p.powerScore - currentPower);
-          return (diff / Math.max(1, currentPower)) < 0.4;
+          return (diff / Math.max(1, currentPower)) < 0.6; // Slightly wider range for demo
         });
 
-      // Simulation of "waiting" for better immersion and actual search time
-      const waitTime = Math.random() * 2000 + 1000;
+      // Simulation of search time
+      const waitTime = Math.random() * 5000 + 2000;
       await new Promise(r => setTimeout(r, waitTime));
 
+      // Re-check if user cancelled
+      if (get().combatStatus !== 'searching') return;
+
       if (candidates.length > 0) {
-        // Pick the closest match by power score
+        clearInterval(timeoutCheck);
         candidates.sort((a, b) => Math.abs(a.powerScore - currentPower) - Math.abs(b.powerScore - currentPower));
         const opponent = candidates[0];
         
-        const enemyBuildings = opponent.buildings.map((b: any) => ({
+        const enemyBuildings = (opponent.buildings || []).map((b: any) => ({
           ...b,
           id: `enemy-${b.id}`,
-          health: 500 * (b.level || 1),
-          maxHealth: 500 * (b.level || 1),
+          health: 800 * (b.level || 1),
+          maxHealth: 800 * (b.level || 1),
         }));
 
         set({ 
           enemyBuildings, 
           opponentName: opponent.playerName || 'Rival Chief',
           combatStatus: 'attacking',
-          matchmakingQueueStartTime: null
+          matchmakingQueueStartTime: null,
+          destructionPercentage: 0,
+          battleStartTime: Date.now(),
+          recordedActions: []
         });
-      } else {
-        set({ combatStatus: 'idle', viewMode: 'playing', matchmakingQueueStartTime: null });
-        alert('No suitable real opponents found. Stay training and try again later!');
+        audioService.play('victory');
       }
     } catch (err) {
+      clearInterval(timeoutCheck);
       handleFirestoreError(err, OperationType.LIST, 'villages');
       set({ combatStatus: 'idle', viewMode: 'playing', matchmakingQueueStartTime: null });
     }
@@ -436,18 +634,48 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   cancelMatchmaking: () => set({ combatStatus: 'idle', viewMode: 'playing', matchmakingQueueStartTime: null }),
 
-  deployUnit: (type: 'soldier' | 'archer' | 'heavy', position: [number, number]) => {
-    const { units } = get();
+  deployUnit: (type: TroopType, position: [number, number]) => {
+    const { units, army, lastDeploymentTime, combatStatus } = get();
+    if (combatStatus !== 'attacking') return;
+    
+    // Deployment rules
+    if (army[type] <= 0) return;
+    
+    // Deployment cooldown (200ms)
+    const now = Date.now();
+    if (now - lastDeploymentTime < 200) return;
+
+    const stats = TROOP_TYPES[type];
     const newUnit: UnitInstance = {
-      id: Math.random().toString(),
+      id: nanoid(),
       type,
       position,
-      health: type === 'heavy' ? 200 : 100,
-      maxHealth: type === 'heavy' ? 200 : 100,
-      level: 1,
+      health: stats.health,
+      maxHealth: stats.health,
+      targetId: null,
       state: 'idle',
+      deployedAt: now
     };
-    set({ units: [...units, newUnit] });
+
+    set({ 
+      units: [...units, newUnit],
+      army: { ...army, [type]: army[type] - 1 },
+      lastDeploymentTime: now,
+      recordedActions: [...get().recordedActions, { type, position, timestamp: now - (get().battleStartTime || now) }]
+    });
+  },
+
+  trainTroop: (type: TroopType) => {
+    const stats = TROOP_TYPES[type];
+    const { army, resources, maxArmyCapacity } = get();
+    
+    // Check capacity
+    const currentArmySize = Object.entries(army).reduce((sum, [t, count]) => sum + (count * TROOP_TYPES[t as TroopType].capacity), 0);
+    if (currentArmySize + stats.capacity > maxArmyCapacity) return;
+
+    if (get().spendResources(stats.cost)) {
+      set({ army: { ...army, [type]: army[type] + 1 } });
+    }
   },
 
   setCombatUnit: (selectedCombatUnit) => set({ selectedCombatUnit }),
@@ -455,6 +683,138 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setUser: (userData) => set((state) => ({
     user: { ...state.user, ...userData }
   })),
+
+  resetVillage: async () => {
+    const { user, syncVillage } = get();
+    if (!user.uid) return;
+
+    // Completely wipe player progress data on Firestore
+    try {
+      await setDoc(doc(db, 'villages', user.uid), {
+        userId: user.uid,
+        buildings: [
+          {
+            id: 'initial-townhall',
+            typeId: 'townhall',
+            level: 1,
+            position: [0, 0],
+            rotation: 0,
+            progress: 1,
+            isConstructing: false,
+            lastUpdate: Date.now(),
+            health: 1000,
+            maxHealth: 1000
+          }
+        ],
+        resources: { wood: 400, stone: 200, food: 400, gold: 1000 },
+        era: 'primal',
+        npcsCount: 0,
+        unlockedZones: ['core'],
+        technologies: [],
+        rankedPoints: 0,
+        rankTier: 'Bronze',
+        tutorialStep: 1,
+        lastSynced: serverTimestamp(),
+        level: 1,
+        powerScore: 100
+      });
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.UPDATE, `villages/${user.uid}`);
+    }
+
+    // Reset local state
+    set({
+      resources: { wood: 400, stone: 200, food: 400, gold: 1000 },
+      maxCapacity: { wood: 1000, stone: 1000, food: 1000, gold: 5000 },
+      buildings: [
+        {
+          id: 'initial-townhall',
+          typeId: 'townhall',
+          level: 1,
+          position: [0, 0],
+          rotation: 0,
+          progress: 1,
+          isConstructing: false,
+          lastUpdate: Date.now(),
+          health: 1000,
+          maxHealth: 1000
+        }
+      ],
+      npcs: [],
+      mapObjects: generateMapObjects(60, 100),
+      technologies: INITIAL_TECHS,
+      quests: INITIAL_QUESTS,
+      era: 'primal',
+      population: 0,
+      seasonPass: {
+        level: 1,
+        xp: 0,
+        nextLevelXp: 1000,
+        isPremium: false,
+        claimedFree: [],
+        claimedPremium: []
+      },
+      dailyMissions: [],
+      rankedPoints: 0,
+      rankTier: 'Bronze',
+      tutorialStep: 1,
+      viewMode: 'playing',
+      inventory: [],
+      craftingQueue: [],
+      researchLevels: {}
+    });
+
+    await syncVillage();
+    window.location.reload(); 
+  },
+
+  addSeasonXP: (amount) => {
+    // Security: Filter suspicious XP gains
+    if (amount <= 0 || amount > 5000) return;
+    set(state => {
+      if (!state.seasonPass) return state;
+      const { level, xp, nextLevelXp } = state.seasonPass;
+      let newXp = xp + amount;
+      let newLevel = level;
+      let newNextLevelXp = nextLevelXp;
+
+      while (newXp >= newNextLevelXp && newLevel < 50) {
+        newXp -= newNextLevelXp;
+        newLevel++;
+        newNextLevelXp = Math.floor(newNextLevelXp * 1.1);
+      }
+
+      return {
+        seasonPass: {
+          ...state.seasonPass,
+          level: newLevel,
+          xp: newXp,
+          nextLevelXp: newNextLevelXp
+        }
+      };
+    });
+  },
+
+  handleMissionProgress: (type, target, amount) => {
+    set(state => {
+      const { dailyMissions, seasonPass } = state;
+      let missionCompleted = false;
+      const updatedMissions = dailyMissions.map(m => {
+        if (m.completed || m.type !== type) return m;
+        if (m.target && m.target !== target) return m;
+        
+        const newProgress = m.progress + amount;
+        const completed = newProgress >= m.requirement;
+        if (completed) missionCompleted = true;
+        
+        return { ...m, progress: newProgress, completed };
+      });
+
+      if (!missionCompleted && JSON.stringify(updatedMissions) === JSON.stringify(dailyMissions)) return state;
+
+      return { dailyMissions: updatedMissions };
+    });
+  },
 
   recalculateCapacity: () => {
     const { buildings, technologies, syncVillage } = get();
@@ -485,7 +845,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   calculateOfflineProgress: () => {
-    const { lastActive, buildings, resources, maxCapacity, npcs, technologies } = get();
+    const { lastActive, buildings: rawBuildings, resources, maxCapacity, npcs: rawNpcs, technologies: rawTechs } = get();
+    const buildings = rawBuildings || [];
+    const npcs = rawNpcs || [];
+    const technologies = rawTechs || [];
     const now = Date.now();
     const elapsedTime = now - lastActive;
     let secondsAway = Math.floor(elapsedTime / 1000);
@@ -580,13 +943,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   // Village Synchronization
   syncVillage: async () => {
-    const { user, buildings, resources, era, villageName, playerName, npcs, unlockedZones, technologies, rankedPoints, rankTier } = get();
+    const { user, buildings: rawBuildings, resources, era, villageName, playerName, npcs: rawNpcs, unlockedZones: rawZones, technologies: rawTechs, rankedPoints, rankTier, activeLiveEvents: rawEvents, seasonPass, season, dailyMissions: rawMissions } = get();
+    const buildings = rawBuildings || [];
+    const npcs = rawNpcs || [];
+    const unlockedZones = rawZones || ['core'];
+    const technologies = rawTechs || [];
+    const activeLiveEvents = rawEvents || [];
+    const dailyMissions = rawMissions || [];
     if (!user.uid) return;
 
     const powerScore = buildings.length * 100 + buildings.reduce((sum, b) => sum + b.level, 0) * 50 + npcs.length * 10;
 
     try {
       await setDoc(doc(db, 'villages', user.uid), {
+        userId: user.uid,
         buildings,
         resources,
         era,
@@ -597,16 +967,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         technologies: technologies.map(t => ({ id: t.id, unlocked: t.unlocked })),
         rankedPoints,
         rankTier,
+        activeLiveEvents,
+        seasonPass,
+        season,
+        dailyMissions,
         lastSynced: serverTimestamp(),
         level: buildings.reduce((sum, b) => sum + (b.isConstructing ? 0 : b.level), 0),
         powerScore: powerScore
       }, { merge: true });
     } catch (err: any) {
-      if (err.code === 'permission-denied') {
-        console.warn('Sync failed: Permission denied. Ensure you are logged in correctly.');
-      } else {
-        console.error('Failed to sync village:', err);
-      }
+      handleFirestoreError(err, OperationType.UPDATE, `villages/${user.uid}`);
     }
   },
 
@@ -667,8 +1037,37 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   addResource: (type, amount) => {
-    const { resources, maxCapacity, syncVillage } = get();
+    // Security: Basic anti-cheat
+    if (amount <= 0 || isNaN(amount)) return;
+    if (amount > 1000000) return; // Suspiciously large gain
+
+    const { resources, maxCapacity, syncVillage, handleMissionProgress } = get();
     const newAmount = Math.min(resources[type] + amount, maxCapacity[type]);
+    const actualGain = newAmount - resources[type];
+    
+    if (actualGain > 0) {
+      // Track gathering for missions
+      handleMissionProgress('collect', type, actualGain);
+
+      // Trigger notification for UI floating text (only for significant discrete gains)
+      if (amount >= 1) {
+        const id = Math.random().toString(36).substr(2, 9);
+        set((state) => ({
+          resourceNotifications: [
+            ...state.resourceNotifications,
+            { id, type, amount: actualGain, timestamp: Date.now() }
+          ].slice(-5) // Keep last 5
+        }));
+        
+        // Auto-remove after 2s
+        setTimeout(() => {
+          set((state) => ({
+            resourceNotifications: state.resourceNotifications.filter(n => n.id !== id)
+          }));
+        }, 2000);
+      }
+    }
+
     set((state) => ({
       resources: {
         ...state.resources,
@@ -676,11 +1075,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }));
     // Sync critical resources immediately
-    if (type === 'gold') syncVillage();
+    if (type === 'gold' && actualGain >= 5) syncVillage();
   },
 
   spendResources: (cost) => {
     const { resources, syncVillage } = get();
+    // Security: Check for negative costs (hack attempt)
+    const hasNegativeCost = Object.values(cost).some(v => (v || 0) < 0);
+    if (hasNegativeCost) return false;
+
     const canAfford = Object.entries(cost).every(([type, amt]) => resources[type as keyof Resources] >= (amt || 0));
     
     if (canAfford) {
@@ -696,7 +1099,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   addNpcsToBuilding: (buildingId, count, typeId, position) => {
-    const { npcs } = get();
+    const rawNpcs = get().npcs || [];
+    const npcs = rawNpcs || [];
     // Population Cap: 50 NPCs max for performance
     if (npcs.length >= 50) return;
     
@@ -731,12 +1135,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
           combatPower: npcType === 'warrior' ? 10 : 0
         });
     }
-    set(state => ({ npcs: [...state.npcs, ...newNpcs] }));
+    set(state => ({ npcs: [...(state.npcs || []), ...newNpcs] }));
   },
 
   placeBuilding: (typeId, position) => {
     const type = BUILDING_TYPES[typeId as keyof typeof BUILDING_TYPES];
-    const { tutorialStep, checkPlacement, unlockedZones } = get();
+    const { tutorialStep, checkPlacement, unlockedZones, buildings } = get();
+    
+    // Building Limit Check (Max 256 per type, except torches)
+    if (typeId !== 'torch') {
+      const count = buildings.filter(b => b.typeId === typeId).length;
+      if (count >= 256) {
+        alert('Max limit reached for this building type!');
+        return;
+      }
+    }
     
     // Zone check
     const currentZone = MAP_ZONES.find(z => 
@@ -861,7 +1274,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       buildings: state.buildings.map(b => 
         b.id === movingBuildingId ? { ...b, position } : b
       ),
-      npcs: state.npcs.map(npc => 
+      npcs: (state.npcs || []).map(npc => 
         npc.buildingId === movingBuildingId 
           ? { ...npc, position: [npc.position[0] + dx, npc.position[1], npc.position[2] + dz] } 
           : npc
@@ -881,37 +1294,69 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set(state => ({
       buildings: state.buildings
         .filter(b => b.id !== idB)
-        .map(b => b.id === idA ? { ...b, level: b.level * 2, progress: 0, isConstructing: true } : b),
-      npcs: state.npcs.filter(npc => npc.buildingId !== idB),
+        .map(b => b.id === idA ? { ...b, level: b.level + 1, progress: 0, isConstructing: true } : b),
+      npcs: (state.npcs || []).filter(npc => npc.buildingId !== idB),
       selectedBuildingId: idA,
       movingBuildingId: null
     }));
 
     // Add extra NPCs for the new level
     const type = BUILDING_TYPES[bA.typeId as keyof typeof BUILDING_TYPES];
-    addNpcsToBuilding(idA, type.npcCount * (bA.level), bA.typeId, bA.position);
+    addNpcsToBuilding(idA, type.npcCount, bA.typeId, bA.position);
+    get().recalculateCapacity();
   },
 
   upgradeBuilding: (id) => {
-    const { buildings, addNpcsToBuilding, resources, spendResources } = get();
+    const { buildings, addNpcsToBuilding, spendResources } = get();
     const b = buildings.find(item => item.id === id);
     if (!b || b.isConstructing) return; 
 
     const type = BUILDING_TYPES[b.typeId as keyof typeof BUILDING_TYPES];
+    
+    // Scale costs based on size, level and a utility factor
+    const utilityMap: Record<string, number> = {
+      townhall: 2.5,
+      market: 1.8,
+      lab: 1.8,
+      factory: 2.0,
+      barracks: 1.6,
+      academy: 2.2,
+      forge: 1.5,
+      observatory: 2.0,
+      storage: 1.2,
+      warehouse: 1.3,
+      lumberjack: 1.4,
+      quarry: 1.4,
+      farm: 1.4,
+      torch: 0.6
+    };
+
+    const factor = utilityMap[b.typeId] || 1.0;
+    const sizeFactor = Math.sqrt(type.size || 1);
+    
+    // Level cap for specific buildings (e.g., Torch max level 2)
+    if (b.typeId === 'torch' && b.level >= 2) return;
+
+    // Exponential growth for level progression (1.6 factor for slower curve)
+    const levelCostMult = Math.pow(1.6, b.level);
+    
     const cost = {
-      wood: (type.cost.wood || 0) * b.level,
-      stone: (type.cost.stone || 0) * b.level,
-      gold: (type.cost.gold || 0) * b.level,
+      wood: Math.floor((type.cost.wood || 0) * levelCostMult * factor * sizeFactor),
+      stone: Math.floor((type.cost.stone || 0) * levelCostMult * factor * sizeFactor),
+      gold: Math.floor((type.cost.gold || 0) * levelCostMult * factor * sizeFactor),
+      food: Math.floor((type.cost.food || 0) * levelCostMult * factor * sizeFactor),
     };
 
     if (spendResources(cost)) {
       set((state) => ({
         buildings: state.buildings.map(bi => 
-          bi.id === id ? { ...bi, level: bi.level * 2, progress: 0, isConstructing: true } : bi
+          bi.id === id ? { ...bi, level: bi.level + 1, progress: 0, isConstructing: true } : bi
         )
       }));
-      // Add extra NPCs (Lv1->Lv2 adds Lv1's worth of NPCs)
-      addNpcsToBuilding(id, type.npcCount * b.level, b.typeId, b.position);
+      // Add extra NPCs (Lv1->Lv2 adds some NPCs)
+      if (type.npcCount > 0) {
+        addNpcsToBuilding(id, Math.ceil(type.npcCount * 0.5), b.typeId, b.position);
+      }
     }
   },
 
@@ -954,9 +1399,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   tick: (delta) => {
     if (get().isPaused) return;
     const { 
-      buildings, resources, maxCapacity, npcs, weather, timeOfDay, 
-      technologies, quests, lastResourceRegen, activeEvents, era 
+      buildings: rawBuildings, resources, maxCapacity, npcs: rawNpcs, weather, timeOfDay, 
+      technologies: rawTechs, quests: rawQuests, lastResourceRegen, activeLiveEvents: rawEvents, era 
     } = get();
+    const buildings = rawBuildings || [];
+    const npcs = rawNpcs || [];
+    const technologies = rawTechs || [];
+    const quests = rawQuests || [];
+    const activeLiveEvents = rawEvents || [];
     const dt = delta / 1000;
     const now = Date.now();
 
@@ -965,7 +1415,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         .filter(t => t.unlocked && t.effect.type === 'efficiency')
         .reduce((sum, t) => sum + t.effect.value, 0);
 
-    const eventMult = activeEvents.reduce((acc, e) => acc * e.multiplier, 1);
+    const eventMult = activeLiveEvents.reduce((acc, e) => acc * e.multiplier, 1);
+    const upgradeSpeedMult = activeLiveEvents.find(e => e.type === 'upgrade_speed')?.multiplier || 1;
 
     // 1. Update NPC Stats (Hunger, Age, Efficiency) - THROTTLED every 10 ticks
     const tickCount = (get() as any).tickCount || 0;
@@ -982,6 +1433,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
           else if (nextHunger < 50) efficiencyMult = 0.8;
     
           efficiencyMult += techEfficiencyBonus;
+          
+          // Harvest fest event
+          if (activeLiveEvents.some(e => e.type === 'harvest_fest')) {
+            efficiencyMult *= 1.5;
+          }
     
           return {
             ...npc,
@@ -1027,10 +1483,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
         gold: Math.max(nextGold, 0) 
     };
 
+    const isGoldPayoutTick = tickCount > 0 && tickCount % (60 * 10) === 0;
+    const goldNotifications: any[] = [];
+
+    const completedBuildings: string[] = [];
+
     const updatedBuildings = buildings.map(b => {
       if (b.isConstructing) {
-        const nextProgress = Math.min(b.progress + dt * (1 / 15), 1);
-        if (nextProgress >= 1) capacityChanged = true;
+        // Construction speed depends on level: Base 15s * level factor
+        const levelFactor = 1 + (b.level * 0.5);
+        const nextProgress = Math.min(b.progress + dt * (1 / (15 * levelFactor)) * upgradeSpeedMult, 1);
+        if (nextProgress >= 1 && b.progress < 1) {
+          capacityChanged = true;
+          completedBuildings.push(b.typeId);
+        }
         return { ...b, progress: nextProgress, isConstructing: nextProgress < 1, lastUpdate: now };
       }
 
@@ -1041,12 +1507,35 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       Object.entries(type.production).forEach(([res, rate]) => {
         const key = res as ResourceType;
-        const multiplier = b.level * workforceMult * eventMult;
-        nextResources[key] = Math.min(nextResources[key] + rate * multiplier * dt, maxCapacity[key]);
+        if (key === 'gold') {
+           if (isGoldPayoutTick) {
+              const amount = rate * 10 * workforceMult * eventMult;
+              const prevGold = nextResources.gold;
+              nextResources.gold = Math.min(nextResources.gold + amount, maxCapacity.gold);
+              const actualGain = nextResources.gold - prevGold;
+              if (actualGain >= 1) {
+                goldNotifications.push({ id: nanoid(), type: 'gold', amount: actualGain, timestamp: now });
+              }
+           }
+        } else {
+           const multiplier = b.level * workforceMult * eventMult;
+           nextResources[key] = Math.min(nextResources[key] + rate * multiplier * dt, maxCapacity[key]);
+        }
       });
 
       return b;
     });
+
+    if (goldNotifications.length > 0) {
+      set({ resourceNotifications: [...get().resourceNotifications, ...goldNotifications].slice(-10) });
+      goldNotifications.forEach(n => {
+        setTimeout(() => {
+          set((state) => ({
+            resourceNotifications: state.resourceNotifications.filter(rn => rn.id !== n.id)
+          }));
+        }, 2000);
+      });
+    }
 
     // Throttled Auto-Sync: Every 2 minutes (120 seconds)
     const shouldAutoSync = tickCount > 0 && tickCount % (60 * 120) === 0; // Assuming 60 ticks per second (approx)
@@ -1094,21 +1583,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return q;
     });
 
-    // 8. Event Management
-    let nextEvents = activeEvents.filter(e => now - e.startTime < e.duration * 1000);
-    if (Math.random() < 0.0005 * dt && nextEvents.length === 0) {
-      const newEvent: WorldEvent = {
-        id: nanoid(),
-        name: 'Bountiful Harvest',
-        description: 'Resource gathering is 50% more effective!',
-        type: 'boom',
-        duration: 60,
-        startTime: now,
-        multiplier: 1.5
-      };
-      nextEvents.push(newEvent);
-    }
-
     // 9. Day/Night & Weather
     const nextTime = (timeOfDay + dt * 0.1) % 24;
     let nextWeather = weather;
@@ -1118,94 +1592,206 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     // 11. Handle Combat Units
-    const { units, enemyBuildings, combatStatus } = get();
+    const { units, enemyBuildings, combatStatus, battleTimeLeft, army, isReplaying, activeReplay, replayTime, replaySpeed, inventory, researchLevels } = get();
     let combatUpdates = {};
-    if (combatStatus === 'attacking' && units.length > 0) {
+    if (combatStatus === 'attacking') {
+      const actualDt = isReplaying ? dt * replaySpeed : dt;
+      const nextBattleTime = Math.max(0, battleTimeLeft - actualDt);
       const nextEnemyBuildings = [...enemyBuildings];
+
+      // Calculate global bonuses
+      const equipmentDmgBonus = inventory.reduce((sum, item) => sum + (item.bonus.damage || 0), 0);
+      const equipmentHpBonus = inventory.reduce((sum, item) => sum + (item.bonus.health || 0), 0);
+      const researchDmgMult = 1 + (researchLevels['combat_dmg'] || 0) * 0.1;
+
+      // Replay Logic: Auto-deploy
+      if (isReplaying && activeReplay) {
+        const nextReplayTime = replayTime + actualDt;
+        activeReplay.deployments.forEach(d => {
+          if (d.timestamp / 1000 > replayTime && d.timestamp / 1000 <= nextReplayTime) {
+            // Deploy!
+            const stats = TROOP_TYPES[d.type];
+            const newUnit: UnitInstance = {
+              id: nanoid(),
+              type: d.type,
+              position: d.position,
+              health: stats.health,
+              maxHealth: stats.health,
+              targetId: null,
+              state: 'idle',
+              deployedAt: Date.now()
+            };
+            units.push(newUnit);
+          }
+        });
+        set({ replayTime: nextReplayTime });
+      }
+
+      // Calculate destruction percentage
+      const totalInitialBuildings = enemyBuildings.length;
+      const destroyedBuildings = enemyBuildings.filter(b => b.health <= 0).length;
+      const nextDestruction = Math.floor((destroyedBuildings / totalInitialBuildings) * 100);
+
       const nextUnits = units.map(u => {
         if (u.health <= 0) return u;
 
-        const targets = nextEnemyBuildings.filter(eb => eb.health > 0);
-        if (targets.length === 0) return { ...u, state: 'idle' as const };
+        const stats = TROOP_TYPES[u.type];
+        const currentMaxHp = (stats.health + equipmentHpBonus);
+        const currentDamage = (stats.damage + equipmentDmgBonus) * researchDmgMult;
+        
+        // --- DEFENSE ATTACK ON UNITS ---
+        // Enemy buildings (defenses) attack units
+        nextEnemyBuildings.forEach(eb => {
+           if (eb.health <= 0) return;
+           const isDefense = eb.typeId === 'barracks' || eb.typeId === 'tower' || eb.typeId === 'mortar';
+           if (!isDefense) return;
+           
+           const dRange = eb.typeId === 'mortar' ? 18 : eb.typeId === 'tower' ? 12 : 5;
+           const dDmg = (eb.typeId === 'mortar' ? 40 : eb.typeId === 'tower' ? 20 : 10) * eb.level * actualDt;
+           
+           const dx = eb.position[0] - u.position[0];
+           const dz = eb.position[1] - u.position[1];
+           const distSq = dx*dx + dz*dz;
+           
+           if (distSq < dRange * dRange) {
+              u.health -= dDmg;
+           }
 
-        let nearestIdx = -1;
-        let minDist = Infinity;
-        targets.forEach((t, idx) => {
-          const dx = t.position[0] - u.position[0];
-          const dz = t.position[1] - u.position[1];
-          const dist = Math.sqrt(dx*dx + dz*dz);
-          if (dist < minDist) {
-            minDist = dist;
-            nearestIdx = nextEnemyBuildings.indexOf(t);
-          }
+           // Trap logic: explode and remove itself
+           if (eb.typeId === 'trap' && distSq < 4) {
+              u.health -= 50; 
+              eb.health = 0; // Triggered
+           }
         });
+        // -------------------------------
 
-        if (minDist > 2) {
-          const nearest = nextEnemyBuildings[nearestIdx];
-          const dx = nearest.position[0] - u.position[0];
-          const dz = nearest.position[1] - u.position[1];
-          const vx = (dx / minDist) * 2 * dt;
-          const vz = (dz / minDist) * 2 * dt;
+        if (u.health <= 0) return u;
+        let targetBuilding = nextEnemyBuildings.find(b => b.id === u.targetId && b.health > 0);
+        if (!targetBuilding) {
+           // Target prioritization
+           const potentialTargets = nextEnemyBuildings.filter(eb => eb.health > 0);
+           if (potentialTargets.length === 0) return { ...u, state: 'idle' as const };
+
+           // Sort by proximity
+           potentialTargets.sort((a, b) => {
+              const da = Math.sqrt((a.position[0] - u.position[0])**2 + (a.position[1] - u.position[1])**2);
+              const db = Math.sqrt((b.position[0] - u.position[0])**2 + (b.position[1] - u.position[1])**2);
+              
+              // Priority override
+              if (stats.priority === 'defense') {
+                 const isADefense = ['barracks', 'tower', 'mortar', 'trap'].includes(a.typeId);
+                 const isBDefense = ['barracks', 'tower', 'mortar', 'trap'].includes(b.typeId);
+                 if (isADefense && !isBDefense) return -1;
+                 if (!isADefense && isBDefense) return 1;
+              }
+              if (stats.priority === 'resource') {
+                 const isARes = ['lumberjack', 'quarry', 'farm', 'market'].includes(a.typeId);
+                 const isBRes = ['lumberjack', 'quarry', 'farm', 'market'].includes(b.typeId);
+                 if (isARes && !isBRes) return -1;
+                 if (!isARes && isBRes) return 1;
+              }
+
+              return da - db;
+           });
+
+           targetBuilding = potentialTargets[0];
+        }
+
+        const dx = targetBuilding.position[0] - u.position[0];
+        const dz = targetBuilding.position[1] - u.position[1];
+        const dist = Math.sqrt(dx*dx + dz*dz);
+
+        if (dist > stats.range) {
+          const vx = (dx / dist) * stats.speed * actualDt;
+          const vz = (dz / dist) * stats.speed * actualDt;
           return {
             ...u,
+            targetId: targetBuilding.id,
             position: [u.position[0] + vx, u.position[1] + vz] as [number, number],
             state: 'moving' as const
           };
         } else {
           // Attack!
-          const dmg = 15 * dt * (u.type === 'heavy' ? 2 : 1);
-          nextEnemyBuildings[nearestIdx] = {
-            ...nextEnemyBuildings[nearestIdx],
-            health: Math.max(0, (nextEnemyBuildings[nearestIdx].health || 0) - dmg)
+          const dmg = currentDamage * actualDt;
+          const targetIdx = nextEnemyBuildings.findIndex(b => b.id === targetBuilding!.id);
+          nextEnemyBuildings[targetIdx] = {
+            ...nextEnemyBuildings[targetIdx],
+            health: Math.max(0, nextEnemyBuildings[targetIdx].health - dmg)
           };
-          return { ...u, state: 'attacking' as const };
+          return { ...u, targetId: targetBuilding.id, state: 'attacking' as const };
         }
       }).filter(u => u.health > 0);
 
-      const townhall = nextEnemyBuildings.find(eb => eb.typeId === 'townhall');
-      let nextStatus: CombatStatus = combatStatus;
-      if (townhall && townhall.health <= 0) {
-        nextStatus = 'victory';
-        // Multiplier Reward for real victory
-        const { rankedPoints } = get();
-        const gainedPoints = 25 + Math.floor(Math.random() * 10);
-        const newPoints = rankedPoints + gainedPoints;
-        
-        // Calculate new tier
-        let nextTier: any = 'Bronze';
-        if (newPoints >= 2500) nextTier = 'Elite';
-        else if (newPoints >= 2000) nextTier = 'Diamond';
-        else if (newPoints >= 1500) nextTier = 'Platinum';
-        else if (newPoints >= 1000) nextTier = 'Gold';
-        else if (newPoints >= 500) nextTier = 'Silver';
+      // Check end conditions
+      const allDestroyed = nextEnemyBuildings.every(b => b.health <= 0);
+      const townHallDestroyed = nextEnemyBuildings.some(b => b.typeId === 'townhall' && b.health <= 0);
+      const noMoreUnits = nextUnits.length === 0 && Object.values(army).every(v => v === 0);
+      const timeOut = nextBattleTime <= 0;
 
-        nextResources.gold += 2000;
-        nextResources.wood += 500;
+      let finalStatus: CombatStatus = combatStatus;
+      if (allDestroyed || townHallDestroyed) finalStatus = 'victory';
+      else if (timeOut || noMoreUnits) {
+         if (nextDestruction >= 50) finalStatus = 'victory';
+         else if (nextDestruction > 0) finalStatus = 'draw';
+         else finalStatus = 'defeat';
+      }
 
-        setTimeout(() => {
-          alert(`VICTORY! You have conquered ${get().opponentName}'s village! Rewards: 2000 Gold, 500 Wood, +${gainedPoints} RP.`);
-          set({ rankedPoints: newPoints, rankTier: nextTier });
-          get().syncVillage();
-          set({ combatStatus: 'idle', viewMode: 'playing' });
-        }, 100);
-      } else if (nextUnits.length === 0 && units.length > 0) {
-        nextStatus = 'defeat';
-        const { rankedPoints } = get();
-        const lostPoints = 15;
-        const newPoints = Math.max(0, rankedPoints - lostPoints);
-        
-        setTimeout(() => {
-          alert(`DEFEAT! Your forces were repelled by ${get().opponentName}. -${lostPoints} RP.`);
-          set({ rankedPoints: newPoints });
-          get().syncVillage();
-          set({ combatStatus: 'idle', viewMode: 'playing' });
-        }, 100);
+      if (finalStatus !== 'attacking') {
+         // Handle end results
+         const { rankedPoints, addSeasonXP, opponentName } = get();
+         let gainedPoints = 0;
+         let rewardGold = 0;
+         let message = "";
+
+         if (finalStatus === 'victory') {
+            gainedPoints = 30 + Math.floor(Math.random() * 10);
+            rewardGold = 2500;
+            addSeasonXP(150);
+            message = `VICTORY! You destroyed ${nextDestruction}% of ${opponentName}'s village! Rewards: ${rewardGold} Gold, +${gainedPoints} RP.`;
+         } else if (finalStatus === 'draw') {
+            gainedPoints = 5;
+            rewardGold = 1000;
+            message = `DRAW! You destroyed ${nextDestruction}% of ${opponentName}'s village. Rewards: ${rewardGold} Gold, +${gainedPoints} RP.`;
+         } else {
+            gainedPoints = -15;
+            message = `DEFEAT! You failed to breach ${opponentName}'s defenses. -15 RP.`;
+         }
+
+         setTimeout(() => {
+           if (!get().isReplaying) {
+             const { recordedActions, opponentName, enemyBuildings, destructionPercentage, replays } = get();
+             const newReplay = {
+               id: nanoid(),
+               opponentName: opponentName || 'Rival Chief',
+               opponentVillage: JSON.parse(JSON.stringify(enemyBuildings.map(b => ({ ...b, health: b.maxHealth })))), // Reset health for replay
+               deployments: recordedActions,
+               randomSeed: Math.random(),
+               result: finalStatus,
+               destruction: destructionPercentage,
+               date: Date.now()
+             };
+             set({ replays: [newReplay, ...replays].slice(0, 10) });
+           }
+
+           alert(message);
+           set({ 
+             rankedPoints: Math.max(0, rankedPoints + gainedPoints),
+             combatStatus: 'idle',
+             viewMode: 'playing',
+             units: [],
+             isReplaying: false,
+             activeReplay: null
+           });
+           get().syncVillage();
+         }, 500);
       }
 
       combatUpdates = {
         units: nextUnits,
         enemyBuildings: nextEnemyBuildings,
-        combatStatus: nextStatus
+        combatStatus: finalStatus,
+        battleTimeLeft: nextBattleTime,
+        destructionPercentage: nextDestruction
       };
     }
 
@@ -1215,7 +1801,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       resources: nextResources, 
       technologies: updatedTechs,
       quests: updatedQuests,
-      activeEvents: nextEvents,
+      activeLiveEvents,
       population: updatedNpcs.length,
       weather: nextWeather,
       timeOfDay: nextTime,
@@ -1224,5 +1810,117 @@ export const useGameStore = create<GameStore>((set, get) => ({
       tickCount: tickCount + 1,
       lastUpdate: now
     });
+
+    // Sub-system periodic ticks
+    get().tickShop();
+
+    // Process completed buildings for missions
+    completedBuildings.forEach(typeId => {
+      get().handleMissionProgress('build', typeId, 1);
+    });
+
+    if (capacityChanged) {
+      get().recalculateCapacity();
+    }
+  },
+
+  tickShop: () => {
+    const state = get();
+    const { dailyShop } = state;
+    const now = Date.now();
+    const lastResetDate = new Date(dailyShop.lastReset || 0).setHours(0,0,0,0);
+    const nowDate = new Date(now).setHours(0,0,0,0);
+
+    if (dailyShop.items.length === 0 || nowDate > lastResetDate) {
+      // Small guard to avoid multiple sets in same frame if logic is called twice
+      if (dailyShop.items.length === 0 && (state as any)._shopLoading) return;
+      (state as any)._shopLoading = true;
+
+      const items: ShopItem[] = [
+        { id: 'gold_pack', name: 'Gold Chest', description: 'Immediate gold injection.', type: 'resource', cost: { type: 'wood', amount: 1000 }, value: { type: 'gold', amount: 2000 }, icon: '💰' },
+        { id: 'wood_super', name: 'Super Wood', description: 'Lots of wood.', type: 'resource', cost: { type: 'gold', amount: 500 }, value: { type: 'wood', amount: 5000 }, icon: '🌳' },
+        { id: 'stone_bulk', name: 'Bulk Stone', description: 'For heavy walls.', type: 'resource', cost: { type: 'gold', amount: 500 }, value: { type: 'stone', amount: 5000 }, icon: '🗿' },
+        { id: 'basic_sword', name: 'Steel Sword', description: 'Boosts warrior damage by 5.', type: 'equipment', cost: { type: 'gold', amount: 1500 }, value: { id: 'sword_1', type: 'weapon', name: 'Steel Sword', bonus: { damage: 5 } }, icon: '⚔️' }
+      ];
+      set({ dailyShop: { items, lastReset: now } });
+      setTimeout(() => { (get() as any)._shopLoading = false; }, 100);
+    }
+  },
+
+  buyShopItem: (item) => {
+    const { spendResources, addResource, inventory } = get();
+    if (spendResources(item.cost.type === 'gold' ? { gold: item.cost.amount } : { [item.cost.type]: item.cost.amount })) {
+      if (item.type === 'resource') {
+        addResource(item.value.type, item.value.amount);
+      } else if (item.type === 'equipment') {
+        set({ inventory: [...inventory, item.value] });
+      }
+    }
+  },
+
+  startReplay: (replay) => {
+    set({
+      isReplaying: true,
+      activeReplay: replay,
+      replayTime: 0,
+      replaySpeed: 1,
+      combatStatus: 'attacking',
+      viewMode: 'fighting',
+      enemyBuildings: replay.opponentVillage,
+      units: [],
+      battleTimeLeft: 180,
+      destructionPercentage: 0
+    });
+  },
+
+  stopReplay: () => {
+    set({
+      isReplaying: false,
+      activeReplay: null,
+      combatStatus: 'idle',
+      viewMode: 'playing'
+    });
+  },
+
+  startCrafting: (equipment) => {
+    const cost = { gold: 500, stone: 200 };
+    if (get().spendResources(cost)) {
+      const job: CraftingJob = {
+        id: nanoid(),
+        equipmentId: equipment.id,
+        startTime: Date.now(),
+        duration: 30000 // 30 seconds for demo
+      };
+      set({ craftingQueue: [...get().craftingQueue, job] });
+    }
+  },
+
+  collectCraftedItem: (jobId) => {
+    const job = get().craftingQueue.find(j => j.id === jobId);
+    if (job && Date.now() - job.startTime >= job.duration) {
+      // Find equipment template (simplified)
+      const equipment: Equipment = { id: job.equipmentId, name: "Crafted Item", type: 'weapon', bonus: { damage: 2 } };
+      set({
+        inventory: [...get().inventory, equipment],
+        craftingQueue: get().craftingQueue.filter(j => j.id !== jobId)
+      });
+    }
+  },
+
+  researchLaboratory: (researchId) => {
+    const { researchLevels } = get();
+    const current = researchLevels[researchId] || 0;
+    const cost = { gold: (current + 1) * 1000 };
+    if (get().spendResources(cost)) {
+      set({
+        researchLevels: { ...researchLevels, [researchId]: current + 1 }
+      });
+    }
+  },
+
+  tradeMarket: (from, to, amount) => {
+    if (get().spendResources({ [from]: amount })) {
+      get().addResource(to, Math.floor(amount * 0.4));
+    }
   }
 }));

@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import { useGameStore, BUILDING_TYPES } from '../../store/useGameStore';
-import { Box, Cylinder, Sphere } from '@react-three/drei';
+import { motion } from 'framer-motion-3d';
+import { Box } from '@react-three/drei';
 import * as THREE from 'three';
 
 export function BuildingPlacement() {
@@ -20,6 +21,7 @@ export function BuildingPlacement() {
     if (!isPlacementMode) return;
     raycaster.setFromCamera(mouse, camera);
     if (raycaster.ray.intersectPlane(plane, point)) {
+      // Snapping to grid
       const x = Math.round(point.x);
       const z = Math.round(point.z);
       if (x !== position[0] || z !== position[1]) {
@@ -30,11 +32,14 @@ export function BuildingPlacement() {
 
   if (!isPlacementMode || !placementTypeId) return null;
 
+  const type = BUILDING_TYPES[placementTypeId as keyof typeof BUILDING_TYPES];
   const { isNear, isOverlap } = checkPlacement(position);
   const isValid = isNear && !isOverlap;
 
   return (
-    <group 
+    <motion.group 
+      animate={{ x: position[0], z: position[1], scale: isValid ? 1 : 1.05 }}
+      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
       position={[position[0], 0, position[1]]}
       onClick={(e) => {
         e.stopPropagation();
@@ -44,18 +49,31 @@ export function BuildingPlacement() {
       }}
     >
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]}>
-        <planeGeometry args={[2, 2]} />
-        <meshStandardMaterial 
-          color={isValid ? "#00ff00" : "#ff0000"} 
+        <planeGeometry args={[type.size || 1, type.size || 1]} />
+        <motion.meshStandardMaterial 
+          animate={{ 
+            opacity: isValid ? [0.2, 0.6, 0.2] : [0.7, 0.1, 0.7],
+            emissiveIntensity: isValid ? [0.1, 0.4, 0.1] : [0.5, 0, 0.5]
+          }}
+          transition={{ duration: isValid ? 1.5 : 0.3, repeat: Infinity }}
+          color={isValid ? "#22c55e" : "#ef4444"} 
+          emissive={isValid ? "#22c55e" : "#ef4444"}
           transparent 
-          opacity={0.3} 
         />
       </mesh>
       
       {/* Ghost Model */}
       <group position={[0, 0.01, 0]}>
-         <Box args={[1.5, 1, 1.5]} position={[0, 0.5, 0]}>
-            <meshStandardMaterial color={isValid ? "#00ff00" : "#ff0000"} transparent opacity={0.4} />
+         <Box args={[(type.size || 1) * 0.9, 0.5, (type.size || 1) * 0.9]} position={[0, 0.25, 0]}>
+            <motion.meshStandardMaterial 
+              animate={{ 
+                opacity: [0.3, 0.4, 0.3],
+              }}
+              transition={{ duration: 2, repeat: Infinity }}
+              color={isValid ? "#4ade80" : "#f87171"} 
+              transparent 
+              wireframe
+            />
          </Box>
       </group>
 
@@ -65,6 +83,6 @@ export function BuildingPlacement() {
            <meshStandardMaterial color="#ff0000" transparent opacity={0.2} />
         </mesh>
       )}
-    </group>
+    </motion.group>
   );
 }

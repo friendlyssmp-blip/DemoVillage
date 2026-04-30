@@ -31,6 +31,8 @@ import { useGameStore } from './store/useGameStore';
 import { audioService } from './services/audioService';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
+import { ProgressionManager } from './components/systems/ProgressionManager';
+
 export default function App() {
   const viewMode = useGameStore(state => state.viewMode);
   const [logoutConfirm, setLogoutConfirm] = React.useState(false);
@@ -59,31 +61,7 @@ export default function App() {
       <AuthOverlay />
       <VillageManager />
       <SocialManager />
-      
-      <AnimatePresence>
-        {isLoading && (
-          <motion.div 
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[999] bg-[#050510] flex flex-col items-center justify-center gap-6"
-          >
-            <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/20 rounded-[40px] flex items-center justify-center animate-pulse">
-               <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-            <div className="text-center">
-              <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">Syncing Village</h2>
-              <p className="text-[10px] font-black text-white/30 uppercase tracking-[0.3em] mt-2">Restoring your legacy...</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Persistent Viewport for Backgrounds */}
-      {(viewMode === 'menu' || viewMode === 'shop' || viewMode === 'clan' || viewMode === 'friends' || viewMode === 'settings' || viewMode === 'ranked') && (
-        <div className="absolute inset-0">
-           <GameViewport menuMode />
-        </div>
-      )}
+      <ProgressionManager />
       
       <AnimatePresence mode="wait">
         {viewMode === 'menu' && (
@@ -94,7 +72,6 @@ export default function App() {
 
         {viewMode === 'playing' && (
           <motion.div key="game" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
-            <GameViewport />
             <HUD />
             <BuildMenu />
             <OfflineSummary />
@@ -105,7 +82,6 @@ export default function App() {
 
         {viewMode === 'fighting' && (
           <motion.div key="combat" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
-            <GameViewport combatMode />
             <CombatUI />
             {combatStatus === 'attacking' && <ChatOverlay />}
           </motion.div>
@@ -175,30 +151,74 @@ export default function App() {
                 </div>
 
                 <div className="pt-4 border-t border-white/10 space-y-3">
-                   <button 
-                     onClick={() => setLogoutConfirm(true)}
-                     className="w-full bg-red-500/10 text-red-500 border border-red-500/20 py-4 rounded-3xl font-black uppercase tracking-widest text-[10px] hover:bg-red-500/20 transition-all active:scale-95"
-                   >
-                     Disconnect Account
-                   </button>
+                  <div className="grid grid-cols-2 gap-3 pb-3 border-b border-white/5">
+                    <button 
+                      onClick={async () => {
+                        try {
+                          await authService.linkGoogle();
+                          audioService.play('click');
+                        } catch (err: any) {
+                          audioService.play('error');
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 bg-white/5 border border-white/10 py-3 rounded-2xl font-black uppercase tracking-widest text-[8px] text-white/60 hover:bg-white/10 transition-all active:scale-95"
+                    >
+                      Link Google
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        try {
+                          await authService.linkApple();
+                          audioService.play('click');
+                        } catch (err: any) {
+                          audioService.play('error');
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 bg-white/5 border border-white/10 py-3 rounded-2xl font-black uppercase tracking-widest text-[8px] text-white/60 hover:bg-white/10 transition-all active:scale-95"
+                    >
+                      Link Apple
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => useGameStore.getState().setViewMode('menu')}
+                    className="w-full bg-white text-black font-black py-4 rounded-3xl uppercase italic tracking-widest text-xs active:scale-95 transition-all shadow-xl"
+                  >
+                    Return to Menu
+                  </button>
                 </div>
               </div>
-
-              <button 
-                onClick={() => useGameStore.getState().setViewMode('menu')}
-                className="w-full bg-white text-black font-black py-4 rounded-3xl uppercase italic tracking-widest text-xs active:scale-95 transition-all shadow-xl"
-              >
-                Return to Menu
-              </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Instructions Tip */}
-      <div className="fixed bottom-4 left-4 z-10 pointer-events-none opacity-40 text-[10px] text-white/50 uppercase tracking-widest font-mono">
-        Drag to rotate • Pinch to zoom • Tap structures to manage
+
+      <AnimatePresence>
+        {isLoading && (
+          <motion.div 
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[999] bg-[#050510] flex flex-col items-center justify-center gap-6"
+          >
+            <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/20 rounded-[40px] flex items-center justify-center animate-pulse">
+               <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+            <div className="text-center">
+              <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">Syncing Village</h2>
+              <p className="text-[10px] font-black text-white/30 uppercase tracking-[0.3em] mt-2">Restoring your legacy...</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="absolute inset-0 -z-0">
+         <GameViewport 
+           menuMode={viewMode !== 'playing'} 
+           combatMode={viewMode === 'fighting'} 
+         />
       </div>
+      
+
       </div>
     </ErrorBoundary>
   );

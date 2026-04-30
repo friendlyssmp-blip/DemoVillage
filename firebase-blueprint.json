@@ -117,6 +117,10 @@
       "schema": "UserProfile",
       "description": "Clan members"
     },
+    "/clans/{clanId}/messages/{msgId}": {
+      "schema": "ChatMessage",
+      "description": "Clan chat messages"
+    },
     "/chats/global/messages/{msgId}": {
       "schema": "ChatMessage",
       "description": "Global chat messages"
