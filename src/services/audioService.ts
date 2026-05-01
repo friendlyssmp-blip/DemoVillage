@@ -3,7 +3,7 @@ import { Howl } from 'howler';
 type SoundName = 
   | 'click' | 'primary' | 'secondary' | 'critical' 
   | 'build' | 'collect' | 'claim' | 'open' | 'close' 
-  | 'error' | 'wind' | 'village' | 'combat' | 'upgrade'
+  | 'error' | 'wind' | 'village' | 'combat' | 'upgrade' | 'attack'
   | 'victory' | 'defeat' | 'music_ambient' | 'music_battle';
 
 class AudioService {
@@ -34,6 +34,7 @@ class AudioService {
       claim: new Howl({ src: ['https://www.soundjay.com/misc/sounds/bell-1.mp3'] }),
       upgrade: new Howl({ src: ['https://www.soundjay.com/misc/sounds/magic-chime-01.mp3'] }),
       combat: new Howl({ src: ['https://www.soundjay.com/misc/sounds/sword-clash-1.mp3'] }),
+      attack: new Howl({ src: ['https://www.soundjay.com/weapon/sounds/sword-slap-1.mp3'], volume: 0.6 }),
       victory: new Howl({ src: ['https://www.soundjay.com/misc/sounds/trumpet-fanfare-1.mp3'] }),
       defeat: new Howl({ src: ['https://www.soundjay.com/misc/sounds/fail-trombone-01.mp3'] }),
 

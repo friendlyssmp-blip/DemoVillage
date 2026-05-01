@@ -9,7 +9,7 @@ import {
   serverTimestamp, increment, getDoc, orderBy, limit
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { UserProfile, FriendRequest, ChatMessage } from '../types';
+import { UserProfile, FriendRequest, ChatMessage } from '../core/types';
 
 export const socialService = {
   // Search for users

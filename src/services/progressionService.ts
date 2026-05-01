@@ -1,4 +1,4 @@
-import { DailyMission, LiveEvent, GameState, ResourceType } from '../types';
+import { DailyMission, LiveEvent, GameState, ResourceType } from '../core/types';
 import { useGameStore } from '../store/useGameStore';
 
 const MISSION_TEMPLATES: Omit<DailyMission, 'id' | 'progress' | 'completed' | 'claimed'>[] = [

@@ -1,6 +1,6 @@
 {
-  "name": "DemoVillage",
-  "description": "A tactical 3D mobile strategy game with deterministic battle replays, daily rotating shop, and specialized buildings like the Laboratory and Ancient Forge for troop upgrades.",
+  "name": "Primal Conquest: Tribe Warfare",
+  "description": "Refactored full-stack village defense strategy game with clean architecture, real-time sync, and professional structure.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

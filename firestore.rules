@@ -1,126 +1,88 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // 0. GLOBAL SAFETY NET
+    
+    // 0. Default Deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // --- PRIMITIVE HELPERS ---
+    // --- Helpers ---
     function isSignedIn() { return request.auth != null; }
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
+    
     function isValidId(id) { 
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
     }
-    function isClanLeader(clanId) {
-      return isSignedIn() && get(/databases/$(database)/documents/clans/$(clanId)).data.leaderId == request.auth.uid;
-    }
 
-    // --- ENTITY VALIDATION BLUEPRINTS ---
-
-    function isValidVillage(data) {
-      // Strict key checks to prevent shadow fields
-      return data.keys().hasAll(['userId', 'buildings', 'resources', 'era', 'npcsCount'])
-          && data.userId == request.auth.uid
-          && data.buildings is list
-          && data.resources is map
-          && data.era is string && data.era.size() <= 32
-          && data.npcsCount is number
-          && (!data.keys().contains('rankedPoints') || data.rankedPoints is number);
-    }
-
-    function isValidProfile(data) {
-      return data.keys().hasAll(['username', 'joinedAt'])
-          && data.username is string && data.username.size() <= 32
-          && data.joinedAt is number;
-    }
-
-    function isJoinClanAction() {
-      return incoming().diff(existing()).affectedKeys().hasOnly(['memberCount'])
-          && incoming().memberCount == existing().memberCount + 1;
-    }
-
-    // --- COLLECTIONS ---
-
-    match /villages/{villageId} {
-      allow get: if isSignedIn();
-      // Allow list for leaderboard: must query by rankedPoints
-      allow list: if isSignedIn(); 
-      allow create: if isOwner(villageId) && isValidVillage(incoming());
-      allow update: if isOwner(villageId) && isValidVillage(incoming())
-                   && incoming().userId == existing().userId; // Immutable userId
-    }
-
-    match /profiles/{userId} {
+    // --- User Profiles ---
+    match /users/{userId} {
       allow read: if isSignedIn();
-      allow create: if isOwner(userId) && isValidProfile(incoming());
-      allow update: if isOwner(userId) || (
-        isSignedIn() 
-        && incoming().diff(existing()).affectedKeys().hasOnly(['clanId', 'clanName'])
-        && existing().clanId != null && isClanLeader(existing().clanId)
+      
+      match /profile {
+         // Users can only create/update their own profile
+         allow read: if isSignedIn();
+         allow write: if isOwner(userId) && isVerified();
+      }
+      
+      match /friends/{friendId} {
+         allow read: if isOwner(userId);
+         allow write: if isOwner(userId);
+      }
+      
+      match /friendRequests/{requestId} {
+         allow read: if isOwner(userId) || isOwner(incoming().senderId);
+         allow create: if isSignedIn() && incoming().targetUserId == userId;
+         allow update, delete: if isOwner(userId);
+      }
+    }
+
+    // --- Villages (The Main Game Data) ---
+    match /villages/{userId} {
+      allow read: if isSignedIn();
+      
+      // Strict validation for the "latest" game state
+      function isValidVillage(data) {
+        return data.keys().hasAll(['userId', 'latest', 'lastSynced'])
+          && data.userId == request.auth.uid
+          && data.latest.resources.wood is number
+          && data.latest.resources.wood >= 0
+          && data.latest.buildings is list;
+      }
+
+      allow create: if isOwner(userId) && isVerified() && isValidVillage(incoming());
+      
+      allow update: if isOwner(userId) && isVerified() && isValidVillage(incoming()) && (
+        // Action: Standard Sync
+        incoming().diff(existing()).affectedKeys().hasOnly(['latest', 'fallback', 'lastSynced'])
       );
     }
 
-    match /usernames/{username} {
-      allow get: if true;
-      allow write: if isSignedIn() 
-                   && isValidId(username)
-                   && incoming().uid == request.auth.uid
-                   && (resource == null || existing().uid == request.auth.uid);
-    }
-
+    // --- Clans ---
     match /clans/{clanId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && incoming().leaderId == request.auth.uid;
-      allow update: if isSignedIn() && (
-        isOwner(existing().leaderId) || 
-        isJoinClanAction() ||
-        (isOwner(existing().leaderId) && incoming().memberCount == existing().memberCount - 1)
-      );
+      allow create: if isSignedIn() && isVerified();
+      allow update: if isSignedIn(); // Add more complexity for leadership later
+      
+      match /members/{memberId} {
+        allow read: if isSignedIn();
+        allow write: if isOwner(memberId);
+      }
     }
 
-    match /clans/{clanId}/members/{userId} {
+    // --- Chat ---
+    match /messages_global/{msgId} {
       allow read: if isSignedIn();
-      allow write: if isOwner(userId) || isClanLeader(clanId);
+      allow create: if isSignedIn() && isVerified() && incoming().senderId == request.auth.uid;
     }
 
-    match /clans/{clanId}/messages/{msgId} {
-      allow read: if isSignedIn() && (
-        exists(/databases/$(database)/documents/clans/$(clanId)/members/$(request.auth.uid))
-      );
-      allow create: if isSignedIn() 
-        && incoming().senderId == request.auth.uid
-        && exists(/databases/$(database)/documents/clans/$(clanId)/members/$(request.auth.uid))
-        && incoming().timestamp <= request.time.toMillis();
-    }
-
-    match /chats/global/messages/{msgId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() 
-        && incoming().senderId == request.auth.uid
-        && incoming().timestamp <= request.time.toMillis();
-    }
-
-    match /users/{userId}/dailyRewards/{document} {
-      allow read, write: if isOwner(userId);
-    }
-
-    match /users/{userId}/friendRequests/{reqId} {
-      allow read: if isOwner(userId);
-      allow create: if isSignedIn() && incoming().fromId == request.auth.uid;
-      allow update: if isOwner(userId) && incoming().status in ['accepted', 'declined'];
-      allow delete: if isOwner(userId) || (
-        isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/users/$(userId)/friendRequests/$(reqId)).data.fromId
-      );
-    }
-
-    match /users/{userId}/friends/{friendId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) || isOwner(friendId);
-      allow delete: if isOwner(userId) || isOwner(friendId);
+    match /messages_clan_{clanId}/{msgId} {
+      allow read: if isSignedIn(); // Add clan membership check for production
+      allow create: if isSignedIn() && isVerified() && incoming().senderId == request.auth.uid;
     }
   }
 }

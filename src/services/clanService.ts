@@ -9,7 +9,7 @@ import {
   serverTimestamp, increment, getDoc, orderBy, limit
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { Clan, UserProfile } from '../types';
+import { Clan, UserProfile } from '../core/types';
 import { nanoid } from 'nanoid';
 
 export const clanService = {

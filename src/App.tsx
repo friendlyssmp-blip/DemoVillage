@@ -10,28 +10,30 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GameViewport } from './components/game/GameViewport';
-import { HUD } from './components/ui/HUD';
-import { BuildMenu } from './components/ui/BuildMenu';
-import { VillageManager } from './components/systems/VillageManager';
-import { OfflineSummary } from './components/ui/OfflineSummary';
-import { MainMenu } from './components/ui/MainMenu';
-import { RankedMenu } from './components/ui/RankedMenu';
-import { Shop } from './components/ui/Shop';
-import { ClanMenu } from './components/ui/ClanMenu';
-import { SocialMenu } from './components/ui/SocialMenu';
-import { ChatOverlay } from './components/ui/ChatOverlay';
-import { DailyRewards } from './components/ui/DailyRewards';
-import { CombatUI } from './components/ui/CombatUI';
-import { AuthOverlay } from './components/auth/AuthOverlay';
-import { CloudSync } from './components/auth/CloudSync';
-import { SocialManager } from './components/systems/SocialManager';
+import { X, AlertOctagon, ShieldAlert } from 'lucide-react';
+import { GameViewport } from './game/GameViewport';
+import { HUD } from './ui/hud/HUD.tsx';
+import { BuildMenu } from './ui/panels/BuildMenu.tsx';
+import { VillageManager } from './systems/VillageManager.tsx';
+import { OfflineSummary } from './ui/panels/OfflineSummary.tsx';
+import { MainMenu } from './ui/menus/MainMenu.tsx';
+import { RankedMenu } from './ui/menus/RankedMenu.tsx';
+import { Shop } from './ui/menus/Shop.tsx';
+import { ClanMenu } from './ui/menus/ClanMenu.tsx';
+import { SocialMenu } from './ui/menus/SocialMenu.tsx';
+import { SettingsPanel } from './ui/panels/SettingsPanel.tsx';
+import { ChatOverlay } from './ui/hud/ChatOverlay.tsx';
+import { DailyRewards } from './ui/panels/DailyRewards.tsx';
+import { CombatUI } from './ui/panels/CombatUI.tsx';
+import { AuthOverlay } from './systems/auth/AuthOverlay.tsx';
+import { CloudSync } from './systems/auth/CloudSync.tsx';
+import { SocialManager } from './systems/SocialManager.tsx';
 import { authService } from './services/authService';
 import { useGameStore } from './store/useGameStore';
 import { audioService } from './services/audioService';
-import { ErrorBoundary } from './components/ui/ErrorBoundary';
+import { ErrorBoundary } from './ui/ErrorBoundary.tsx';
 
-import { ProgressionManager } from './components/systems/ProgressionManager';
+import { ProgressionManager } from './systems/ProgressionManager.tsx';
 
 export default function App() {
   const viewMode = useGameStore(state => state.viewMode);
@@ -50,6 +52,7 @@ export default function App() {
   };
   const combatStatus = useGameStore(state => state.combatStatus);
   const user = useGameStore(state => state.user);
+  const isFlagged = useGameStore(state => state.isFlagged);
   
   // Only show loading if we are logged in but profile hasn't loaded yet
   const isLoading = user.uid && !user.profile;
@@ -58,6 +61,34 @@ export default function App() {
     <ErrorBoundary>
       <div className="fixed inset-0 w-full h-full overflow-hidden select-none bg-black">
       <CloudSync />
+      
+      {/* Anti-Cheat Suspension Overlay */}
+      <AnimatePresence>
+        {isFlagged && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-[9999] bg-red-950/95 backdrop-blur-3xl flex flex-col items-center justify-center p-8 text-center"
+          >
+            <div className="w-24 h-24 bg-red-500/20 border border-red-500/30 rounded-[40px] flex items-center justify-center mb-8">
+              <X className="text-red-500" size={48} />
+            </div>
+            <h1 className="text-4xl font-black text-white uppercase italic tracking-tighter mb-4">Account Suspended</h1>
+            <p className="text-red-200/60 max-w-md uppercase font-black text-xs tracking-widest leading-loose">
+              Our behavior detection system has identified unusual activity on this account. Access to features has been restricted.
+              <br/><br/>
+              <span className="text-white/40">Reason: Abnormal action frequency (Rate Limit Exceeded)</span>
+            </p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="mt-12 px-12 py-4 bg-white text-black font-black uppercase tracking-widest rounded-2xl hover:scale-105 transition-transform"
+            >
+              Contact Support
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AuthOverlay />
       <VillageManager />
       <SocialManager />
@@ -119,74 +150,8 @@ export default function App() {
             exit={{ opacity: 0, scale: 1.1 }} 
             className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-3xl p-4"
           >
-            <div className="max-w-md w-full bg-zinc-900 border border-white/10 rounded-[40px] p-8 shadow-2xl space-y-8">
-              <div className="text-center">
-                <div className="w-16 h-1 bg-white/20 rounded-full mx-auto mb-6" />
-                <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">System Settings</h2>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 mt-1">Configuration</p>
-              </div>
-
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-white/40">
-                    <span className="text-[10px] font-black uppercase tracking-widest">Master Volume</span>
-                    <span className="text-[10px] font-mono">80%</span>
-                  </div>
-                  <div className="w-full h-1 bg-white/10 rounded-full relative">
-                    <div className="absolute left-0 top-0 h-full w-[80%] bg-emerald-500 rounded-full" />
-                    <div className="absolute left-[80%] top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow-lg" />
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white/5 rounded-2xl border border-white/5 flex justify-between items-center">
-                  <span className="text-[10px] font-black uppercase text-white/40 tracking-widest">Post-Processing</span>
-                  <div className="w-12 h-6 bg-emerald-500/20 border border-emerald-500/30 rounded-full relative">
-                    <div className="absolute right-1 top-1 w-4 h-4 bg-emerald-500 rounded-full" />
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white/5 rounded-2xl border border-white/5 flex justify-between items-center opacity-40">
-                  <span className="text-[10px] font-black uppercase text-white/40 tracking-widest">Cloud Saving</span>
-                  <div className="text-[8px] font-black italic text-emerald-400">ACTIVE</div>
-                </div>
-
-                <div className="pt-4 border-t border-white/10 space-y-3">
-                  <div className="grid grid-cols-2 gap-3 pb-3 border-b border-white/5">
-                    <button 
-                      onClick={async () => {
-                        try {
-                          await authService.linkGoogle();
-                          audioService.play('click');
-                        } catch (err: any) {
-                          audioService.play('error');
-                        }
-                      }}
-                      className="flex items-center justify-center gap-2 bg-white/5 border border-white/10 py-3 rounded-2xl font-black uppercase tracking-widest text-[8px] text-white/60 hover:bg-white/10 transition-all active:scale-95"
-                    >
-                      Link Google
-                    </button>
-                    <button 
-                      onClick={async () => {
-                        try {
-                          await authService.linkApple();
-                          audioService.play('click');
-                        } catch (err: any) {
-                          audioService.play('error');
-                        }
-                      }}
-                      className="flex items-center justify-center gap-2 bg-white/5 border border-white/10 py-3 rounded-2xl font-black uppercase tracking-widest text-[8px] text-white/60 hover:bg-white/10 transition-all active:scale-95"
-                    >
-                      Link Apple
-                    </button>
-                  </div>
-                  <button 
-                    onClick={() => useGameStore.getState().setViewMode('menu')}
-                    className="w-full bg-white text-black font-black py-4 rounded-3xl uppercase italic tracking-widest text-xs active:scale-95 transition-all shadow-xl"
-                  >
-                    Return to Menu
-                  </button>
-                </div>
-              </div>
+            <div className="max-w-md w-full bg-zinc-900 border border-white/10 rounded-[40px] p-8 shadow-2xl">
+              <SettingsPanel showBack={false} />
             </div>
           </motion.div>
         )}
